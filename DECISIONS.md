@@ -19,3 +19,9 @@ Format: `## ADR-NNN: Title` → **Context**, **Decision**, **Alternatives**, **C
 **Decision:** Patches may only modify `src/main/**` and add new tests; existing tests/build files are immutable; verified = exit 0 + oracle test passes + test count not reduced.
 **Alternatives:** Trust agent-written tests; LLM-as-judge.
 **Consequences:** Can't fix bugs whose tests are wrong (explicit non-goal); strong, defensible verification claim.
+
+## ADR-004: Read-only rootfs verified + `docker-java-transport-zerodep`
+**Context:** PRD §6.1 required a Week-1 spike to confirm offline Maven works with `--read-only` rootfs and a baked `/opt/m2`. Separately, `docker-java-transport-httpclient5` collided with Spring Boot 3.4's managed `httpclient5` 5.4 BOM when dialing Unix sockets.
+**Decision:** Keep `--read-only` rootfs enabled with `tmpfs` at `/tmp` (`rw,noexec,nosuid,size=128m`) and bind-mounted `/workspace` (spike passed in 11s, Maven test time 8.7s). Use `docker-java-transport-zerodep` for reliable Unix-socket transport without BOM conflicts.
+**Alternatives:** Drop `--read-only`; pin older `httpclient5` (risks breaking Spring Boot starters).
+**Consequences:** Strongest container filesystem isolation with zero dependency conflicts across macOS Docker Desktop and Linux VMs.

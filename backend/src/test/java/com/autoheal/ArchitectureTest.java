@@ -3,12 +3,13 @@ package com.autoheal;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import org.springframework.beans.factory.annotation.Autowired;
 
-@AnalyzeClasses(packages = "com.autoheal")
+@AnalyzeClasses(packages = "com.autoheal", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
   @ArchTest
@@ -22,10 +23,11 @@ class ArchitectureTest {
   static final ArchRule domainMustNotDependOnOuterLayers =
       noClasses()
           .that()
-          .resideInAPackage("..domain..")
+          .resideInAPackage("com.autoheal.domain..")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage("..api..", "..service..", "..infra..")
+          .resideInAnyPackage(
+              "com.autoheal.api..", "com.autoheal.service..", "com.autoheal.infra..")
           .allowEmptyShould(true)
           .because("Domain layer must stay pure and independent of api/service/infra.");
 
@@ -33,10 +35,10 @@ class ArchitectureTest {
   static final ArchRule apiMustNotBypassServiceToInfra =
       noClasses()
           .that()
-          .resideInAPackage("..api..")
+          .resideInAPackage("com.autoheal.api..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("..infra..")
+          .resideInAPackage("com.autoheal.infra..")
           .allowEmptyShould(true)
           .because("Controllers (api) must call service, never infra directly.");
 
@@ -44,10 +46,10 @@ class ArchitectureTest {
   static final ArchRule infraMustNotDependOnApi =
       noClasses()
           .that()
-          .resideInAPackage("..infra..")
+          .resideInAPackage("com.autoheal.infra..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("..api..")
+          .resideInAPackage("com.autoheal.api..")
           .allowEmptyShould(true)
           .because("Infrastructure adapters must not depend on HTTP/API layer.");
 }

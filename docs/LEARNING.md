@@ -67,3 +67,34 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Java `ConcurrentHashMap.compute`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html#compute(K,java.util.function.BiFunction))
 - [Java `CountDownLatch`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CountDownLatch.html)
 - [Spring Boot Reference — `@DataJpaTest`](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html#testing.spring-boot-applications.autoconfigured-spring-data-jpa)
+
+---
+
+## Slice 3: Pre-Warmed Runner Image & Hardened Docker Sandbox (`FR-4.1`, `FR-4.2`, `FR-4.3`, §6.1)
+
+### What was built
+- Built `sandbox/Dockerfile` (`autoheal-maven-runner:java21`): creates non-root UID 1000, warms `/opt/m2` by running a real `mvn test` on `demo-service` at image build time, and verified the Week-1 `--read-only` + `--network=none` spike (`mvn -o test` passed in 8.7s).
+- Added `SandboxRequest`, `SandboxResult`, and `SandboxRunner` in `com.autoheal.domain` (hexagonal port: `service` depends on `domain`, `infra` implements `domain`).
+- Built `SandboxContainerSpec`, `DockerSandboxClientFactory`, and `DockerSandboxRunner` in `com.autoheal.infra.docker` using `docker-java-core` + `docker-java-transport-zerodep`:
+  - Enforces all §6.1 controls: `--network=none`, `768 MiB` memory + swap cap, `1.0` CPU, `256` PIDs limit, `--cap-drop=ALL`, `no-new-privileges`, `--read-only` rootfs + `tmpfs` `/tmp`, UID `1000:1000`, `autoheal=true` label, and no host secrets in env.
+  - Streams stdout/stderr line-by-line via `ResultCallback`, enforces hard timeout, always force-removes containers in `finally`, and provides `sweepExpiredContainers(...)`.
+- Verified with unit tests (`SandboxContainerSpecTest`, `SandboxDomainTest`) and real Docker integration tests (`DockerSandboxRunnerTest`: green build, failing build, 1s timeout kill, zero leaked containers).
+
+### Key Concepts Used
+- **Linux cgroups & namespaces in Docker**: `--memory`/`--memory-swap`, `--cpus` (`NanoCPUs`), and `--pids-limit` are enforced by kernel **cgroups** (preventing OOM and fork bombs). `--network=none` gives the container an isolated network namespace with only loopback, blocking internet and cloud metadata (`169.254.169.254`) access.
+- **Linux Capabilities & `no-new-privileges`**: `--cap-drop=ALL` strips all kernel privileges (like `CAP_NET_RAW`, `CAP_SYS_ADMIN`). `no-new-privileges` blocks setuid binaries from gaining privileges even if present.
+- **Read-only rootfs + `tmpfs`**: `--read-only` prevents untrusted code from modifying `/opt/m2` or system binaries; `tmpfs` at `/tmp` (`noexec,nosuid`) gives the JVM a small in-memory scratch space where binaries cannot be executed.
+- **Hexagonal Architecture (Ports & Adapters)**: `SandboxRunner` lives in `com.autoheal.domain` with zero Docker imports. `DockerSandboxRunner` in `com.autoheal.infra.docker` implements it. ArchUnit enforces that `domain` never imports `infra`, so we can unit-test the agent loop later without Docker.
+
+### Likely Interview Questions
+1. **Why aren't `--memory` and `--cpus` enough to stop a fork bomb inside a Docker container?**
+   - *Answer:* Even with a memory cap, spawning thousands of tiny processes can exhaust the host's PID table (`kernel.pid_max`) and starve other processes on the VM. Setting `--pids-limit=256` caps the total number of processes/threads in that container's cgroup.
+2. **Why warm the Maven cache with a real `mvn test` instead of `mvn dependency:go-offline`?**
+   - *Answer:* `dependency:go-offline` does not always resolve dynamically loaded plugins like Surefire's JUnit Platform provider or compiler annotation processors. Running a real `mvn test` during `docker build` guarantees every runtime and test plugin is cached in `/opt/m2` so `mvn -o test` succeeds with `--network=none`.
+3. **Why did you put the `SandboxRunner` interface in `domain` and its Docker implementation in `infra`?**
+   - *Answer:* Dependency inversion (hexagonal architecture). Business logic in `service` depends only on the `SandboxRunner` interface, not `docker-java`. That keeps domain logic portable, lets us swap runtimes (e.g. gVisor or remote runners), and makes unit tests fast and deterministic.
+
+### Official Docs
+- [Docker Engine Security](https://docs.docker.com/engine/security/)
+- [Docker Resource Constraints (cgroups)](https://docs.docker.com/engine/containers/resource_constraints/)
+- [docker-java GitHub](https://github.com/docker-java/docker-java)
