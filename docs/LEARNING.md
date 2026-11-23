@@ -98,3 +98,34 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Docker Engine Security](https://docs.docker.com/engine/security/)
 - [Docker Resource Constraints (cgroups)](https://docs.docker.com/engine/containers/resource_constraints/)
 - [docker-java GitHub](https://github.com/docker-java/docker-java)
+
+---
+
+## Slice 4: JGit Workspace Manager & Surefire XML Report Parser (End of Week 1)
+
+### What was built
+- **Surefire XML Report Parser** (`SurefireReportParser` in `com.autoheal.service` + `TestSuiteReport`/`TestCaseId` records in `com.autoheal.domain`):
+  - Parses `target/surefire-reports/TEST-*.xml` to extract exact passing tests, failing/error tests, skipped count, and executed test count (the data needed by the Test Integrity Policy oracle in `FR-3.4`).
+  - Hardened `DocumentBuilderFactory` against XXE (`disallow-doctype-decl`, external entities disabled).
+- **JGit Host-Side Workspace Manager** (`JGitWorkspaceManager` in `com.autoheal.infra.git` + `WorkspaceManager`/`WorkspaceHandle` in `com.autoheal.domain`):
+  - Clones a specific branch into an isolated per-run temp directory using JGit (no shelling out to `git`, works while the sandbox stays `--network=none`).
+  - `WorkspaceHandle` implements `AutoCloseable`, so `try (WorkspaceHandle ws = ...)` guarantees workspace deletion even on exceptions.
+  - `readRecentDiffs(...)` reads recent commit messages and unified diffs via JGit `DiffFormatter` (capped at 16 KB for `FR-2.2`).
+
+### Key Concepts Used
+- **XML External Entity (XXE) Prevention**: Surefire XML files are produced inside an untrusted sandbox running AI-generated code. By default, Java's `DocumentBuilderFactory` allows `<!DOCTYPE>` declarations that can read host files (`file:///etc/passwd`) or trigger SSRF. Setting `disallow-doctype-decl = true` blocks XXE completely.
+- **`AutoCloseable` & try-with-resources**: Wrapping a temporary directory in an `AutoCloseable` handle (`WorkspaceHandle`) leverages Java's try-with-resources so cleanup runs deterministically when the block exits—just like closing a file or DB connection.
+- **JGit (`Git.cloneRepository`, `DiffFormatter`)**: Pure-Java Git implementation. Avoids OS-level `ProcessBuilder("git", ...)` command injection risks and makes testing against temporary local Git repos fast and portable.
+
+### Likely Interview Questions
+1. **Why harden the XML parser when it only reads Maven Surefire reports?**
+   - *Answer:* The Surefire XML is generated inside the sandbox where untrusted AI code ran—malicious or buggy test code could write a crafted XML file containing an XXE payload (`<!DOCTYPE ... SYSTEM "file:///etc/passwd">`). Disabling DTDs in `DocumentBuilderFactory` is a 4-line defense-in-depth safeguard.
+2. **Why clone the repo with JGit on the host instead of cloning inside Docker or shelling out to `git`?**
+   - *Answer:* The sandbox has `--network=none`, so it cannot clone. On the host, JGit avoids shelling out (no command-injection surface, no dependency on host `git` binary/version) and lets us compute commit diffs programmatically.
+3. **Why does `WorkspaceHandle` implement `AutoCloseable`?**
+   - *Answer:* So callers can use `try (var ws = workspaceManager.cloneBranch(...))` and guarantee temp directories are deleted even if an exception is thrown mid-pipeline.
+
+### Official Docs
+- [OWASP XXE Prevention Cheat Sheet (Java)](https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j)
+- [Eclipse JGit Documentation](https://eclipse.dev/jgit/documentation/)
+- [Java `AutoCloseable`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/AutoCloseable.html)
