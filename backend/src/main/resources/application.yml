@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: autoheal-backend
+  threads:
+    virtual:
+      enabled: true

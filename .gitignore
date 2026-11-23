@@ -1,0 +1,26 @@
+# OS & Editors
+.DS_Store
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Java / Maven
+target/
+*.jar
+*.war
+*.log
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Secrets & local env
+.env
+.env.*
+!.env.example
+
+# AutoHeal runtime workspaces
+runs/
+*.tmp
