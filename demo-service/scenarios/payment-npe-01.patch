@@ -1,0 +1,12 @@
+--- a/src/main/java/com/autoheal/demo/payment/PaymentService.java
++++ b/src/main/java/com/autoheal/demo/payment/PaymentService.java
+@@ -11,9 +11,6 @@ public class PaymentService {
+ 
+   public BigDecimal calculateTotal(PaymentRequest request) {
+     BigDecimal subtotal = request.subtotal();
+-    if (request.discount() == null || request.discount().percentage() == null) {
+-      return subtotal.setScale(2, RoundingMode.HALF_UP);
+-    }
+     BigDecimal discountAmount =
+         subtotal.multiply(request.discount().percentage()).divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+     return subtotal.subtract(discountAmount).setScale(2, RoundingMode.HALF_UP);

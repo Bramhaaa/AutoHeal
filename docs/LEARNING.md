@@ -34,3 +34,36 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [ArchUnit User Guide](https://www.archunit.org/userguide/html/000_Index.html)
 - [Google Error Prone](https://errorprone.info/)
 - [JaCoCo Maven Plugin](https://www.jacoco.org/jacoco/trunk/doc/maven.html)
+
+---
+
+## Slice 2: Demo Service & 4 Deterministic Bug Scenarios (`FR-1.1`)
+
+### What was built
+- Created `demo-service/` (`autoheal-demo-service`), a Spring Boot 3.4 / Java 21 Maven project with 4 realistic services and JUnit 5 tests on a green baseline:
+  1. `PaymentService` (`payment-npe-01`): `NullPointerException` when an optional `Discount` record is `null`.
+  2. `PaginationService` (`pagination-off-by-one-02`): off-by-one upper bound in `List.subList`.
+  3. `InventoryService` (`inventory-race-03`): lost-update race condition on `ConcurrentHashMap` when `getOrDefault` + `put` is used instead of atomic `compute(...)`.
+  4. `CustomerOrderRepository` (`jpql-typo-04`): broken JPQL field name (`o.status` instead of `o.orderStatus`), tested via `@DataJpaTest` + H2 in-memory DB (no network needed).
+- Stored the 4 bug patches in `demo-service/scenarios/*.patch` plus `demo-service/scripts/create-scenario-branches.sh` to generate a standalone Git repo with `main` (green) and `scenario/*` branches.
+- Verified offline (`mvn -B -o test`) that all 4 bug branches fail, and `inventory-race-03` fails 20/20 times when buggy and passes 20/20 times when fixed.
+
+### Key Concepts Used
+- **Java `record` (`Discount`, `PaymentRequest`)**: Concise immutable data carriers introduced in Java 16+. Automatically generates constructor, getters (`request.subtotal()`), `equals`, `hashCode`, and `toString`.
+- **Compound actions on `ConcurrentHashMap`**: `ConcurrentHashMap` makes individual operations (`get`, `put`) thread-safe, **not** sequences of operations (`get` → compute → `put`). Two threads can read the same stock count and overwrite each other (lost update). `stockBySku.compute(sku, (k, v) -> ...)` executes the read-modify-write atomically per key bucket.
+- **`CountDownLatch` for deterministic concurrency tests**: Instead of `Thread.sleep`, two latches (`ready` and `start`) force all 8 worker threads to start decrementing at the exact same instant, maximizing contention so the race condition reproduces 20/20 times.
+- **`@DataJpaTest` + H2**: A Spring Boot *test slice* that starts only JPA/Hibernate and an embedded H2 database—much faster than `@SpringBootTest` and works completely offline inside a `--network=none` Docker sandbox.
+- **Pinning Maven plugins & `argLine`**: Explicitly pinning `maven-compiler-plugin` and `maven-surefire-plugin` versions and setting `-Xmx256m` prevents Maven from trying to resolve plugin metadata online and keeps the forked test JVM inside the sandbox's 768 MB memory cap.
+
+### Likely Interview Questions
+1. **Isn't `ConcurrentHashMap` thread-safe? Why did `inventory-race-03` still have a race condition?**
+   - *Answer:* Each individual method (`get`, `put`) is thread-safe, so the map's internal structure won't corrupt. However, a compound read-modify-write (`get` → subtract → `put`) is not atomic: two threads can read `100`, both compute `99`, and both write `99`, losing one decrement. Using `compute()` (or `merge()` / `AtomicInteger`) makes the entire update atomic per key.
+2. **How do you write a non-flaky test for a race condition?**
+   - *Answer:* Avoid `Thread.sleep`. Use `CountDownLatch` to synchronize thread start so all threads hit the critical section simultaneously, and run enough iterations (e.g., 8 threads × 10,000 decrements) so the buggy code fails deterministically (verified 20/20 runs) while the fixed code passes 20/20 runs.
+3. **What is the difference between `@SpringBootTest` and `@DataJpaTest`?**
+   - *Answer:* `@SpringBootTest` boots the entire application context. `@DataJpaTest` loads only the JPA layer (entities, repositories, Hibernate, and an embedded database like H2 by default) and rolls back each test transaction automatically, making repository tests fast and isolated.
+
+### Official Docs
+- [Java `ConcurrentHashMap.compute`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html#compute(K,java.util.function.BiFunction))
+- [Java `CountDownLatch`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CountDownLatch.html)
+- [Spring Boot Reference — `@DataJpaTest`](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html#testing.spring-boot-applications.autoconfigured-spring-data-jpa)

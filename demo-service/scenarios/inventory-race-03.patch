@@ -1,0 +1,22 @@
+--- a/src/main/java/com/autoheal/demo/inventory/InventoryService.java
++++ b/src/main/java/com/autoheal/demo/inventory/InventoryService.java
+@@ -18,14 +18,10 @@ public class InventoryService {
+   }
+ 
+   public void decrement(String sku, int quantity) {
+-    stockBySku.compute(
+-        sku,
+-        (key, current) -> {
+-          int available = current == null ? 0 : current;
+-          if (available < quantity) {
+-            throw new IllegalStateException("Insufficient stock for SKU: " + sku);
+-          }
+-          return available - quantity;
+-        });
++    int available = stockBySku.getOrDefault(sku, 0);
++    if (available < quantity) {
++      throw new IllegalStateException("Insufficient stock for SKU: " + sku);
++    }
++    stockBySku.put(sku, available - quantity);
+   }
+ }

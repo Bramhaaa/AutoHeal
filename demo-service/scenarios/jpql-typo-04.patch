@@ -1,0 +1,10 @@
+--- a/src/main/java/com/autoheal/demo/order/CustomerOrderRepository.java
++++ b/src/main/java/com/autoheal/demo/order/CustomerOrderRepository.java
+@@ -8,6 +8,6 @@ import org.springframework.data.repository.query.Param;
+ 
+ public interface CustomerOrderRepository extends JpaRepository<CustomerOrder, Long> {
+ 
+-  @Query("SELECT o FROM CustomerOrder o WHERE o.orderStatus = :status")
++  @Query("SELECT o FROM CustomerOrder o WHERE o.status = :status")
+   List<CustomerOrder> findByStatus(@Param("status") String status);
+ }

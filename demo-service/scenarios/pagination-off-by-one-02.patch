@@ -1,0 +1,11 @@
+--- a/src/main/java/com/autoheal/demo/pagination/PaginationService.java
++++ b/src/main/java/com/autoheal/demo/pagination/PaginationService.java
+@@ -14,7 +14,7 @@ public class PaginationService {
+     if (fromIndex >= items.size()) {
+       return List.of();
+     }
+-    int toIndex = Math.min(fromIndex + pageSize, items.size());
++    int toIndex = Math.min(fromIndex + pageSize - 1, items.size());
+     return List.copyOf(items.subList(fromIndex, toIndex));
+   }
+ }
