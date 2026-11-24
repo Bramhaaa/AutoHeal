@@ -50,3 +50,7 @@ Start searches here before scanning the repo.
   - Port & models: `backend/src/main/java/com/autoheal/domain/{GitHubActionsLogClient,WebhookFailureEvent,WebhookProcessingResult,WebhookSignatureException}.java`
   - Services & adapter: `backend/src/main/java/com/autoheal/service/{WebhookProperties,WebhookSignatureVerifier,GitHubWebhookService}.java`, `backend/src/main/java/com/autoheal/infra/github/GitHubRestActionsLogClient.java`
   - Controller: `backend/src/main/java/com/autoheal/api/{GitHubWebhookController,WebhookResponse}.java`
+- **`pgvector` Historical RAG (`FR-2.3`):**
+  - Ports & models: `backend/src/main/java/com/autoheal/domain/{EmbeddingClient,IncidentMemoryRepository,IncidentMemoryEntry,IncidentMemorySource}.java`
+  - Adapters: `backend/src/main/java/com/autoheal/infra/persistence/JdbcIncidentMemoryRepository.java`, `backend/src/main/java/com/autoheal/infra/llm/GeminiEmbeddingClient.java`
+  - Seed & service: `backend/src/main/java/com/autoheal/service/{IncidentMemorySeedCatalog,IncidentMemoryService}.java`

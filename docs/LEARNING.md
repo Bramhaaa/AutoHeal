@@ -528,3 +528,41 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [GitHub Docs — Validating Webhook Deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)
 - [GitHub REST API — Download Workflow Run Logs](https://docs.github.com/en/rest/actions/workflow-runs#download-workflow-run-logs)
 - [Java `MessageDigest.isEqual`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/security/MessageDigest.html#isEqual(byte%5B%5D,byte%5B%5D))
+
+
+---
+
+## Slice 17: `pgvector` Historical RAG, Seed Corpus & Eval Leakage Guard (`FR-2.3` — End of Week 4)
+
+### What was built
+- **Domain Ports & Models (`com.autoheal.domain`)**:
+  - `EmbeddingClient` (`EMBEDDING_DIMENSION = 768`), `IncidentMemorySource` (`SEED`, `VERIFIED_RUN`), `IncidentMemoryEntry`, and `IncidentMemoryRepository`.
+  - Extended `HealingContext` with `List<IncidentMemoryEntry> historicalMatches` (keeping the 4-arg convenience constructor).
+- **PostgreSQL `pgvector` Adapter (`JdbcIncidentMemoryRepository` in `com.autoheal.infra.persistence`)**:
+  - Persists 768-dim embeddings via `CAST(:embedding AS vector)` and retrieves top-K nearest neighbors using cosine distance (`embedding <=> CAST(:queryEmbedding AS vector)`), returning `1 - distance` as cosine similarity.
+  - Enforces the **eval leakage guard** in SQL: `(:excludeOriginBugId::text IS NULL OR origin_bug_id IS NULL OR origin_bug_id <> :excludeOriginBugId::text)`.
+  - Verified against a real `pgvector/pgvector:pg16` Testcontainers instance (`JdbcIncidentMemoryRepositoryTest`).
+- **Gemini Embedding Adapter (`GeminiEmbeddingClient` in `com.autoheal.infra.llm`)**:
+  - Calls `POST /v1beta/models/text-embedding-004:embedContent` with `outputDimensionality: 768`, validates vector length, and throws `LlmException` on missing key or dimension mismatch.
+- **Seed Corpus & Self-Populating Memory (`IncidentMemorySeedCatalog`, `IncidentMemoryService`)**:
+  - 30 curated Java/Spring Boot incident write-ups (distinct from the 4 Playground scenarios).
+  - `seedIfEmpty()` idempotently embeds and inserts the seed corpus; `retrieveSimilar(sig, excludeOriginBugId, ragEnabled)` returns top-2 matches (and skips cleanly when `ragEnabled=false` for ablation or when embeddings are unavailable); `recordVerifiedResolution(...)` stores every verified fix back into `incident_memory`.
+- **Pipeline Wiring (`AgenticHealingService`, `DefaultLiveIncidentExecutor`)**:
+  - Injects top-2 historical matches into the agent's initial user prompt (`Similar past incidents (for reference)`) and records verified fixes after green builds.
+
+### Key Concepts Used
+- **`pgvector` Cosine Distance (`<=>`) & HNSW Index**: The `<=>` operator computes cosine distance (`0` = identical direction, `2` = opposite), so `1 - (a <=> b)` yields cosine similarity in `[-1, 1]`. Using an HNSW index (`vector_cosine_ops`) gives fast approximate nearest-neighbor search even on empty or small tables (unlike `ivfflat`, which requires training data).
+- **Evaluation Leakage Guard (`origin_bug_id`)**: In a self-populating RAG system, running an evaluation suite multiple times would let later runs retrieve the exact answer from an earlier run of the *same* bug, artificially inflating fix rates. Filtering out rows matching `origin_bug_id` guarantees honest benchmark numbers.
+- **Graceful Degradation for Optional Context**: RAG improves fix quality but should never block a run if the embedding endpoint is temporarily unavailable or unconfigured; `IncidentMemoryService` logs a warning and returns `List.of()` so core healing still proceeds.
+
+### Likely Interview Questions
+1. **Why did you use an HNSW index instead of IVFFlat on `incident_memory.embedding`?**
+   - *Answer:* IVFFlat requires a representative dataset to exist before building clusters and degrades if created on an empty table. HNSW builds a multi-layer navigable graph incrementally, so it works out of the box from migration day 1 with strong recall.
+2. **What is data leakage in a self-populating RAG benchmark, and how did you prevent it?**
+   - *Answer:* Because AutoHeal writes every verified fix back to `incident_memory`, running a 3× evaluation pass would allow pass 2 to retrieve pass 1's exact fix for the same bug. We tag every `VERIFIED_RUN` row with `origin_bug_id` and exclude `origin_bug_id = :excludeOriginBugId` in the SQL `WHERE` clause during retrieval.
+3. **Why keep `ragEnabled` as an explicit parameter on `retrieveSimilar(...)`?**
+   - *Answer:* PRD §7 requires an ablation study (RAG on vs. RAG off) on the exact same pipeline and bug corpus. A per-call boolean lets the evaluation harness toggle RAG cleanly without swapping beans or restarting the app.
+
+### Official Docs
+- [`pgvector` — Indexing (HNSW vs IVFFlat) & Distance Operators](https://github.com/pgvector/pgvector#hnsw)
+- [Gemini API — Embeddings (`embedContent`)](https://ai.google.dev/gemini-api/docs/embeddings)

@@ -77,6 +77,8 @@ class DefaultLiveIncidentExecutorTest {
                 List.of(verified),
                 List.of(usage)));
 
+    IncidentMemoryService memoryService = mock(IncidentMemoryService.class);
+
     DefaultLiveIncidentExecutor executor =
         new DefaultLiveIncidentExecutor(
             workspaceManager,
@@ -86,7 +88,9 @@ class DefaultLiveIncidentExecutorTest {
             healingService,
             repo,
             stream,
-            props);
+            props,
+            mock(GitHubActionsLogClient.class),
+            memoryService);
 
     UUID runId = UUID.randomUUID();
     repo.createRun(
@@ -155,7 +159,8 @@ class DefaultLiveIncidentExecutorTest {
             repo,
             stream,
             props,
-            actionsLogClient);
+            actionsLogClient,
+            mock(IncidentMemoryService.class));
 
     UUID runId = UUID.randomUUID();
     repo.createRun(
@@ -190,6 +195,8 @@ class DefaultLiveIncidentExecutorTest {
     when(healingService.heal(any(), any()))
         .thenReturn(HealingResult.failed("MAX_ATTEMPTS", List.of(), List.of()));
 
+    IncidentMemoryService memoryService = mock(IncidentMemoryService.class);
+
     DefaultLiveIncidentExecutor executor =
         new DefaultLiveIncidentExecutor(
             workspaceManager,
@@ -199,7 +206,9 @@ class DefaultLiveIncidentExecutorTest {
             healingService,
             repo,
             stream,
-            props);
+            props,
+            mock(GitHubActionsLogClient.class),
+            memoryService);
 
     UUID runId = UUID.randomUUID();
     executor.executeLiveRun(runId, scenario);
@@ -225,7 +234,9 @@ class DefaultLiveIncidentExecutorTest {
             mock(AgenticHealingService.class),
             new RecordingRepository(),
             new IncidentEventStreamService(new RecordingRepository(), new ObjectMapper()),
-            blankRepoProps);
+            blankRepoProps,
+            mock(GitHubActionsLogClient.class),
+            mock(IncidentMemoryService.class));
 
     assertThatThrownBy(() -> executor.executeLiveRun(UUID.randomUUID(), scenario))
         .isInstanceOf(IllegalStateException.class)

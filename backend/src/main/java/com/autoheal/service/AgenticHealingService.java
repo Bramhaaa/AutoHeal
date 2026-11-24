@@ -299,12 +299,28 @@ public class AgenticHealingService {
   }
 
   private String initialUserPrompt(HealingContext context) {
-    return "Failing tests: "
-        + context.baselineReport().failingTests()
-        + "\n\nDistilled failure log:\n"
-        + context.baselineLog().summary()
-        + (context.recentGitDiffs().isBlank()
-            ? ""
-            : "\n\nRecent Git diffs:\n" + context.recentGitDiffs());
+    StringBuilder prompt = new StringBuilder();
+    prompt
+        .append("Failing tests: ")
+        .append(context.baselineReport().failingTests())
+        .append("\n\nDistilled failure log:\n")
+        .append(context.baselineLog().summary());
+    if (!context.recentGitDiffs().isBlank()) {
+      prompt.append("\n\nRecent Git diffs:\n").append(context.recentGitDiffs());
+    }
+    if (!context.historicalMatches().isEmpty()) {
+      prompt.append("\n\nSimilar past incidents (for reference):");
+      for (int i = 0; i < context.historicalMatches().size(); i++) {
+        var match = context.historicalMatches().get(i);
+        prompt
+            .append("\n")
+            .append(i + 1)
+            .append(". Error: ")
+            .append(match.errorSignature())
+            .append("\n   Fix pattern: ")
+            .append(match.resolutionSummary());
+      }
+    }
+    return prompt.toString();
   }
 }

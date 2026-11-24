@@ -7,6 +7,7 @@ import com.autoheal.domain.HealingContext;
 import com.autoheal.domain.HealingResult;
 import com.autoheal.domain.IncidentAttempt;
 import com.autoheal.domain.IncidentEventType;
+import com.autoheal.domain.IncidentMemoryEntry;
 import com.autoheal.domain.IncidentRepository;
 import com.autoheal.domain.IncidentStage;
 import com.autoheal.domain.IncidentStatus;
@@ -23,10 +24,10 @@ import com.autoheal.domain.WorkspaceHandle;
 import com.autoheal.domain.WorkspaceManager;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -41,8 +42,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
   private final IncidentEventStreamService eventStreamService;
   private final PipelineProperties properties;
   private final GitHubActionsLogClient actionsLogClient;
+  private final IncidentMemoryService incidentMemoryService;
 
-  @Autowired
   public DefaultLiveIncidentExecutor(
       WorkspaceManager workspaceManager,
       SandboxRunner sandboxRunner,
@@ -52,7 +53,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
       IncidentRepository incidentRepository,
       IncidentEventStreamService eventStreamService,
       PipelineProperties properties,
-      GitHubActionsLogClient actionsLogClient) {
+      GitHubActionsLogClient actionsLogClient,
+      IncidentMemoryService incidentMemoryService) {
     this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
     this.sandboxRunner = Objects.requireNonNull(sandboxRunner, "sandboxRunner");
     this.surefireParser = Objects.requireNonNull(surefireParser, "surefireParser");
@@ -62,29 +64,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
     this.eventStreamService = Objects.requireNonNull(eventStreamService, "eventStreamService");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.actionsLogClient = Objects.requireNonNull(actionsLogClient, "actionsLogClient");
-  }
-
-  DefaultLiveIncidentExecutor(
-      WorkspaceManager workspaceManager,
-      SandboxRunner sandboxRunner,
-      SurefireReportParser surefireParser,
-      LogDistiller logDistiller,
-      AgenticHealingService healingService,
-      IncidentRepository incidentRepository,
-      IncidentEventStreamService eventStreamService,
-      PipelineProperties properties) {
-    this(
-        workspaceManager,
-        sandboxRunner,
-        surefireParser,
-        logDistiller,
-        healingService,
-        incidentRepository,
-        eventStreamService,
-        properties,
-        (owner, repo, workflowRunId) -> {
-          throw new IllegalStateException("GitHubActionsLogClient is not configured");
-        });
+    this.incidentMemoryService =
+        Objects.requireNonNull(incidentMemoryService, "incidentMemoryService");
   }
 
   @Override
@@ -98,6 +79,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
 
     runPipeline(
         runId,
+        scenario.id(),
         properties.demoRepoUri(),
         scenario.branch(),
         Map.of("scenarioId", scenario.id(), "branch", scenario.branch()),
@@ -114,6 +96,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
             event.owner(), event.repo(), event.workflowRunId());
     runPipeline(
         runId,
+        event.fullRepoName() + ":" + event.headBranch(),
         event.cloneUrl(),
         event.headBranch(),
         Map.of(
@@ -125,6 +108,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
 
   private void runPipeline(
       UUID runId,
+      String originBugId,
       String repoUri,
       String branch,
       Map<String, Object> receivedPayload,
@@ -168,8 +152,11 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
           IncidentEventType.STAGE_UPDATE,
           Map.of("maxAttempts", AgenticHealingService.MAX_ATTEMPTS));
 
+      List<IncidentMemoryEntry> historicalMatches =
+          incidentMemoryService.retrieveSimilar(distilled.summary(), originBugId, true);
       HealingContext context =
-          new HealingContext(workspace.directory(), distilled, baselineReport, recentDiffs);
+          new HealingContext(
+              workspace.directory(), distilled, baselineReport, recentDiffs, historicalMatches);
       HealingResult result =
           healingService.heal(
               context,
@@ -184,6 +171,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
       long durationMs = Math.max(0L, System.currentTimeMillis() - startedMs);
 
       if (result.succeeded()) {
+        incidentMemoryService.recordVerifiedResolution(
+            originBugId, distilled.summary(), result.rootCauseSummary());
         incidentRepository.completeRun(
             runId,
             IncidentStatus.SUCCEEDED,
