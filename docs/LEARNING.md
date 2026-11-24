@@ -224,3 +224,37 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [JEP 409 — Sealed Classes](https://openjdk.org/jeps/409)
 - [JEP 441 — Pattern Matching for `switch`](https://openjdk.org/jeps/441)
 - [Java `BigDecimal`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/math/BigDecimal.html)
+
+---
+
+## Slice 8: Gemini `LlmClient` HTTP Adapter (`FR-3.1`, `FR-3.3`)
+
+### What was built
+- Added `spring-boot-starter-web` to `backend/pom.xml` (for Spring `RestClient`, Jackson `ObjectMapper`, and Week 3 REST/SSE endpoints).
+- Created `GeminiProperties` (`@ConfigurationProperties(prefix = "autoheal.llm.gemini")` Java `record`) bound to env-var placeholders in `application.yml` (`GEMINI_API_KEY`, `GEMINI_BASE_URL`, `GEMINI_MODEL`, per-million token prices).
+- Implemented `GeminiLlmClient` (`com.autoheal.infra.llm`) implementing `com.autoheal.domain.LlmClient`:
+  - Sends `POST /v1beta/models/{model}:generateContent` with `x-goog-api-key` header (never in the URL query string).
+  - Declares all 4 structured tools (`list_files`, `read_file`, `search_code`, `propose_patch`) with `function_calling_config.mode = "ANY"`.
+  - Maps `functionCall` responses into sealed `LlmToolCall` records and `usageMetadata` into `LlmUsage` with `BigDecimal` USD cost calculation and wall-clock latency.
+  - Fails loudly with `LlmException` on missing API key, non-2xx HTTP status, invalid JSON, or missing function call.
+- Wired `DockerSandboxConfig` (`@Bean SandboxRunner`) and `@Service` on `AgenticHealingService` so the entire agentic pipeline boots cleanly in Spring (`AutoHealApplicationTest`).
+- Tested end-to-end HTTP serialization, header hygiene, tool parsing, cost math, and error paths using an in-process JDK `HttpServer` (`GeminiLlmClientTest`).
+
+### Key Concepts Used
+- **Spring `RestClient` vs `WebClient`**: `RestClient` (Spring 6.1+) provides a fluent, synchronous HTTP API that pairs naturally with Java 21 Virtual Threads—giving high I/O concurrency without reactive `Mono`/`Flux` boilerplate.
+- **`@ConfigurationProperties` on Java `record`**: Immutable, type-safe configuration binding scanned via `@ConfigurationPropertiesScan`. Keeps secrets, URLs, model names, and prices out of source code.
+- **API Key in HTTP Header (`x-goog-api-key`) vs Query String (`?key=...`)**: Passing secrets in headers keeps them out of URLs, reverse-proxy access logs, and exception messages.
+- **In-Process `com.sun.net.httpserver.HttpServer` in Tests**: Lets us verify real HTTP requests, headers, JSON schemas, and error status codes (`429`) in <250ms with zero external mock-server dependencies.
+
+### Likely Interview Questions
+1. **Why send the Gemini API key in the `x-goog-api-key` header instead of `?key=...` in the URL?**
+   - *Answer:* URLs are routinely logged by HTTP clients, reverse proxies, and exception stack traces (`RestClientException`). Keeping the API key in a header prevents accidental credential leakage in logs.
+2. **Why use Spring `RestClient` instead of `WebClient` or `RestTemplate`?**
+   - *Answer:* `RestTemplate` is in maintenance mode, and `WebClient` requires pulling in reactive WebFlux. With Java 21 Virtual Threads enabled, blocking `RestClient` calls scale cleanly while keeping code and stack traces simple.
+3. **Why force `function_calling_config.mode = "ANY"` when calling Gemini?**
+   - *Answer:* Our agent loop expects a strictly typed tool call (`list_files`, `read_file`, `search_code`, or `propose_patch`) on every turn. Setting `mode: ANY` prevents the model from replying with free-form prose that would break parsing and waste a turn.
+
+### Official Docs
+- [Spring Framework — `RestClient`](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html#rest-restclient)
+- [Spring Boot — `@ConfigurationProperties`](https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties)
+- [Gemini API — Function Calling](https://ai.google.dev/gemini-api/docs/function-calling)

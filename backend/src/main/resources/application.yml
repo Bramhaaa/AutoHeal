@@ -4,3 +4,12 @@ spring:
   threads:
     virtual:
       enabled: true
+
+autoheal:
+  llm:
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+      model: ${GEMINI_MODEL:gemini-2.5-flash}
+      prompt-price-per-million: ${GEMINI_PROMPT_PRICE_PER_MILLION:0.15}
+      completion-price-per-million: ${GEMINI_COMPLETION_PRICE_PER_MILLION:0.60}

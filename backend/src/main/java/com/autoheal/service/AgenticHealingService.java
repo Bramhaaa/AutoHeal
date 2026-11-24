@@ -38,7 +38,9 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.springframework.stereotype.Service;
 
+@Service
 public class AgenticHealingService {
 
   public static final int MAX_ATTEMPTS = 3;
