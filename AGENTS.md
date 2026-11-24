@@ -7,6 +7,12 @@ Source of truth: `PRD.md` (v1.1). Reference requirement IDs (e.g. `FR-4.2`) in c
 - Frontend: Next.js (App Router), TypeScript (strict), Tailwind, Monaco diff editor.
 - Tests: JUnit 5, AssertJ, Mockito (only at true boundaries), Testcontainers for Postgres/Docker integration tests, Playwright for UI.
 
+## Session memory & multi-session workflows
+- Persistent project memory lives in `.agents/memory/` (`overview.md`, `architecture.md`, `index.md`, `current.md`, `sessions/YYYY-MM-DD.md`). ADRs stay in `DECISIONS.md` (single source of truth).
+- Priority when facts conflict: repository source code > `PRD.md` / `DECISIONS.md` > `.agents/memory/`.
+- Start searches from `.agents/memory/index.md` before scanning the repo.
+- Use the `session-start` skill at the beginning of a new session, `session-checkpoint` to save mid-session state, and `session-shutdown` before wrapping up. Only update memory files affected by verified changes.
+
 ## Workflow (mandatory)
 1. Small slices: implement one FR (or less) at a time. No multi-module "big bang" generations.
 2. Use the `test-driven-development` skill for all backend logic: failing test first, then code.
