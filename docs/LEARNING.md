@@ -460,3 +460,33 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Spring Boot — Actuator Health Endpoint](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)
 - [Spring Framework — `@Scheduled`](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
 - [Nginx — `proxy_buffering`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)
+
+
+---
+
+## Slice 15: Next.js Live Incident Playground & Benchmarks UI (`FR-1.1`–`FR-1.5`)
+
+### What was built
+- **Next.js App Router Frontend (`frontend/`)** with strict TypeScript (`strict: true`, `noUncheckedIndexedAccess: true`), Tailwind CSS v4, ESLint (`--max-warnings 0`, `no-explicit-any: error`), Monaco Diff Editor (`@monaco-editor/react`), and Playwright E2E smoke tests.
+- **Typed API & Route Registry (`src/lib/routes.ts`, `src/lib/types.ts`, `src/lib/api.ts`)**: Centralized API route builders using `NEXT_PUBLIC_API_BASE_URL` (browser connects directly to Spring Boot for SSE, bypassing Vercel function timeout limits per PRD §2.2), and typed `ApiClientError` surfacing `suggestedMode: "REPLAY"` on HTTP `429`/`503`.
+- **Named SSE Stream Hook (`src/hooks/useIncidentStream.ts`)**: Subscribes to `GET /api/v1/incidents/{runId}/stream` via `EventSource`, registers explicit listeners for all 8 named `IncidentEventType` events (`STAGE_UPDATE`, `LOG_LINE`, `TOOL_CALL`, `PATCH_PROPOSED`, `PATCH_REJECTED`, `ATTEMPT_RESULT`, `COMPLETED`, `FAILED`), deduplicates by `eventId` across `Last-Event-ID` reconnects, and triggers `GET /api/v1/incidents/{runId}` on terminal events.
+- **Unified Diff Parser & Monaco Diff Viewer (`src/lib/diffParser.ts`, `src/components/PatchDiffViewer.tsx`)**: Parses multi-file unified diffs into per-file original/modified buffers and dynamically imports Monaco `DiffEditor` with `ssr: false` so Next.js SSR stays clean.
+- **Playground Workbench & Benchmarks Tab (`src/components/*`, `src/app/page.tsx`, `src/app/benchmarks/page.tsx`)**: Scenario selector with Live/Replay toggle, 5-stage numbered pipeline visualizer, `#0F172A` live terminal highlighting `BUILD FAILURE` → `BUILD SUCCESS`, verification/PR summary bar, and `/benchmarks` evaluation report view.
+
+### Key Concepts Used
+- **Named SSE Events (`event:` field) vs. Default `onmessage`**: When Spring's `SseEmitter.event().name(type)` sets a custom SSE event name, the browser's `EventSource.onmessage` callback does **not** fire. Clients must register `eventSource.addEventListener(type, handler)` for each named event type.
+- **Direct Browser-to-Backend SSE (Bypassing Serverless Proxies)**: Serverless hosts like Vercel impose short HTTP function timeouts (10–60s) and buffer responses, which breaks long-lived SSE streams. Pointing `EventSource` directly at the Spring Boot / Nginx origin (with CORS restricted to the frontend origin) keeps streams reliable.
+- **Client-Only Dynamic Import (`next/dynamic` with `ssr: false`)**: Monaco Editor accesses `window` and browser DOM APIs at module evaluation time. Loading it with `dynamic(..., { ssr: false })` prevents Next.js server-side rendering crashes while keeping the initial JS bundle small.
+
+### Likely Interview Questions
+1. **Why did `EventSource.onmessage` not receive your Spring Boot SSE events?**
+   - *Answer:* Because `IncidentController` sets `.name(event.eventType().name())`, which emits `event: LOG_LINE` (etc.) in the SSE frame. The HTML5 EventSource spec only routes unnamed events (or `event: message`) to `onmessage`; named events require `addEventListener(eventName, ...)`.
+2. **How do you prevent duplicate log lines when an SSE connection drops and reconnects?**
+   - *Answer:* Each SSE frame carries an `id: <eventSeq>` header. The browser automatically sends `Last-Event-ID` on reconnect so the backend only replays newer events, and the frontend also keeps a `Set<number>` of seen `eventId`s as a client-side idempotency guard.
+3. **Why convert unified diffs into separate `original` and `modified` buffers on the frontend instead of just rendering raw `+`/`-` text?**
+   - *Answer:* Monaco's `DiffEditor` requires two text models (`original` and `modified`) to provide side-by-side alignment, inline word-level diff highlights, and Java syntax highlighting. Parsing the server's canonical unified diff per file gives reviewers an IDE-grade diff view while keeping raw unified diff available as a toggle.
+
+### Official Docs
+- [MDN — Using Server-Sent Events (`EventSource`)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
+- [Next.js — Lazy Loading & `next/dynamic`](https://nextjs.org/docs/app/guides/lazy-loading)
+- [Playwright — Network Mocking (`page.route`)](https://playwright.dev/docs/mock)

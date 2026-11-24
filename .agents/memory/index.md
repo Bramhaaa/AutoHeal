@@ -4,6 +4,7 @@ Start searches here before scanning the repo.
 
 ## Top-Level Modules
 - `backend/` — Spring Boot 3.4 Maven service + quality gates (`pom.xml`, `Dockerfile`, `.mvn/jvm.config`).
+- `frontend/` — Next.js App Router Live Incident Playground & Benchmarks UI (`FR-1.1`–`FR-1.5`, TypeScript strict, Tailwind v4, Monaco Diff Editor, Playwright E2E).
 - `demo-service/` — Standalone Spring Boot demo service with 4 deterministic bug scenarios (`FR-1.1`).
 - `sandbox/` — Pre-warmed Maven runner `Dockerfile` (`autoheal-maven-runner:java21`, `FR-4.1`).
 - `infra/nginx/` — Production Nginx reverse proxy config (`autoheal.conf`, SSE `proxy_buffering off`).
@@ -40,3 +41,8 @@ Start searches here before scanning the repo.
 - **Async Pipeline, SSE Stream, Replay & Abuse Protection (`FR-1.1`–`1.2`, `PRD §4.1`–`4.2`, `§6.2`–`6.3`):**
   - Services: `backend/src/main/java/com/autoheal/service/{ScenarioCatalog,IncidentEventStreamService,IncidentOrchestratorService,DefaultLiveIncidentExecutor,PipelineProperties,AbuseProtectionService,AbuseProtectionProperties}.java`
   - REST/SSE API: `backend/src/main/java/com/autoheal/api/{ScenarioController,IncidentController,GlobalExceptionHandler,WebCorsConfig,ScenarioResponse,SimulateRequest,SimulateResponse,IncidentRunResponse,SseEventEnvelope,ApiErrorResponse}.java`
+- **Live Incident Playground & Benchmarks Frontend (`FR-1.1`–`FR-1.5`):**
+  - Routes, types, API & diff parser: `frontend/src/lib/{routes,types,api,diffParser}.ts`
+  - Named SSE hook: `frontend/src/hooks/useIncidentStream.ts`
+  - UI components & pages: `frontend/src/components/{TopNav,ScenarioSelector,PipelineVisualizer,LiveTerminal,PatchDiffViewer,RunSummaryBar,PlaygroundWorkbench,BenchmarksView}.tsx`, `frontend/src/app/{layout,page}.tsx`, `frontend/src/app/benchmarks/page.tsx`
+  - Playwright smoke tests: `frontend/tests/playground.spec.ts`
