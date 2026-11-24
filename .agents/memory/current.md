@@ -1,25 +1,23 @@
 # Current Working Memory
 
-- **Current Phase:** End of Week 2 → Starting Week 3 (Spring Boot API, PostgreSQL/Flyway, SSE & MVP Deploy)
-- **Current Branch:** `main` (pushed to `origin/main` @ `510f935`)
+- **Current Phase:** End of Week 3 (MVP Checkpoint Reached) → Starting Week 4 (Next.js Playground UI, GitHub Webhook, `pgvector` RAG)
+- **Current Branch:** `main` (pushed to `origin/main`)
 - **Completed Work:**
-  - PRD v1.1 (`PRD.md`, single source of truth; superseded `PRD.v1.0.md` removed in `510f935`).
-  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..004), quality skills, and persistent memory installed.
-  - **Week 1 (Slices 1–4):**
-    - Slice 1 (`f5b06c2`): Backend skeleton + Error Prone, Spotless, JaCoCo (≥80% `service`/`domain`), ArchUnit gates.
-    - Slice 2 (`219d01b`): `demo-service` with 4 deterministic bug scenarios (20/20 race verified).
-    - Slice 3 (`d640e20`): `autoheal-maven-runner:java21` image (`8.7s` offline `--read-only` spike) + hardened `DockerSandboxRunner`.
-    - Slice 4 (`4615577`): `JGitWorkspaceManager` + XXE-safe `SurefireReportParser`.
-  - **Week 2 (Slices 5–9):**
-    - Slice 5 (`e04de62`): Path-safe `WorkspaceTools`/`WorkspacePathResolver`, `TestIntegrityPolicy`, `PatchApplier` (`java-diff-utils:4.12`).
-    - Slice 6 (`43a1331`): `LogDistiller` (`FR-2.1`, ≥75% noise reduction, 500 KB cap).
-    - Slice 7 (`6086a6a`): `LlmClient` port, Java 21 sealed `LlmToolCall`, bounded `AgenticHealingService` (max 3 attempts, max 15 tool calls/attempt, `BigDecimal` cost accounting).
-    - Slice 8 (`477a002`): `GeminiLlmClient` (`RestClient`, `x-goog-api-key` header, `mode=ANY`, `spring-boot-starter-web`) + `DockerSandboxConfig` Spring wiring.
-    - Slice 9 (`ce4f93d`): `GitHubRestPrClient` (6-step Git Data API → Draft PR) + `PullRequestBodyFormatter` (`FR-5.1`, `FR-5.2`).
-  - Verification: `mvn -B -f backend/pom.xml clean verify` green (`57/57` tests, Error Prone clean, Spotless `64/64`, ArchUnit `4/4`, JaCoCo ≥80% met).
+  - PRD v1.1 (`PRD.md`, single source of truth).
+  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..005), learning log (`docs/LEARNING.md` Slices 1–14), quality skills, and persistent memory.
+  - **Week 1 (Slices 1–4):** Backend skeleton + quality gates (`f5b06c2`), `demo-service` 4 deterministic scenarios (`219d01b`), hardened `DockerSandboxRunner` + `autoheal-maven-runner:java21` (`d640e20`), `JGitWorkspaceManager` + XXE-safe `SurefireReportParser` (`4615577`).
+  - **Week 2 (Slices 5–9):** Path-safe `WorkspaceTools` + `TestIntegrityPolicy` + `PatchApplier` (`e04de62`), `LogDistiller` (`43a1331`), `LlmClient` + bounded `AgenticHealingService` (`6086a6a`), `GeminiLlmClient` (`477a002`), `GitHubRestPrClient` + `PullRequestBodyFormatter` (`ce4f93d`).
+  - **Week 3 (Slices 10–14 — MVP Checkpoint):**
+    - Slice 10 (`d68d0f0`): `docker-compose.yml` (`pgvector/pgvector:pg16`), Flyway `V1__initial_schema.sql` (all 6 PRD §5 tables + HNSW index), `JdbcIncidentRepository` (`ADR-005`), Testcontainers `@ServiceConnection` tests.
+    - Slice 11 (`93e2406`): `ScenarioCatalog` (4 demo branches + oracle tests) & `IncidentEventStreamService` (persisted + live SSE fan-out, subscribe-before-replay `Last-Event-ID`).
+    - Slice 12 (`785e08b`): Async `IncidentOrchestratorService` (virtual threads, fair `Semaphore(3)` bulkhead, `maxQueuedRuns=10`, zero-cost `REPLAY` mode) & `DefaultLiveIncidentExecutor`.
+    - Slice 13 (`539e391`): Bucket4j `AbuseProtectionService` (3 live runs/hr/IP + `$2.00/day` spend circuit breaker), `ScenarioController`, `IncidentController` (REST + `SseEmitter` with 15s `: ping` heartbeats), `GlobalExceptionHandler`, `WebCorsConfig`.
+    - Slice 14 (`f9b1ccf`): Scheduled `SandboxSweeperService` (90s container / 1h workspace cleanup, `FR-4.3`), Actuator `/actuator/health`, `backend/Dockerfile` (UID 1000), `docker-compose.prod.yml`, `infra/nginx/autoheal.conf` (SSE `proxy_buffering off`), `.env.example`.
+  - Verification: `mvn -B -f backend/pom.xml spotless:apply clean verify` green (`86/86` tests, Error Prone 0 warnings, Spotless `111/111`, ArchUnit `4/4`, JaCoCo ≥80% met); `docker compose config` & `docker-compose.prod.yml` valid.
 - **Next Recommended Task:**
-  - **Week 3, Slice 10 (`PRD §5`):** PostgreSQL 16 + `pgvector` `docker-compose.yml` for local dev + Flyway migrations (`incident_runs`, `incident_attempts`, `llm_calls`, `incident_events`, `incident_memory`, `benchmark_reports`) + persistence adapters tested via Testcontainers.
+  - **Week 4, Slice 15 (`FR-1.1`–`FR-1.5`):** Next.js (App Router, strict TypeScript, Tailwind, Monaco Diff Editor) Live Incident Playground frontend (`frontend/`): scenario cards, Live/Replay toggle, 5-stage SSE pipeline visualizer (`EventSource` + `Last-Event-ID`), live terminal, diff viewer, and Playwright smoke test.
+  - Followed by Slice 16 (`PRD §4.1` GitHub `workflow_run` webhook with constant-time HMAC-SHA256 + delivery de-dup + Actions log zip download) and Slice 17 (`FR-2.3` `incident_memory` `pgvector` RAG seed corpus + self-populating memory + eval leakage guard).
 - **Known Minor Gaps (non-blocking):**
-  - `DockerSandboxRunner.sweepExpiredContainers(Duration)` has no dedicated test yet.
-  - On Linux VMs (Week 3 deploy), ensure backend runs as UID `1000` or sets POSIX permissions so container UID `1000` can write `target/` in bind-mounted `/workspace`.
+  - `DockerSandboxRunner.sweepExpiredContainers(Duration)` has unit coverage on `SandboxSweeperService` (mocked runner) but no dedicated Docker integration test yet.
+  - `DefaultLiveIncidentExecutor` does not yet wire `GitHubPrClient` PR creation directly into the post-verify step (needs `modifiedFiles` map on `HealingResult`); add before live VM demo.
 - **Blockers:** None (ensure Docker Desktop is running when executing `DockerSandboxRunnerTest` and Testcontainers tests).
