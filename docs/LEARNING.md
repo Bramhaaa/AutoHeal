@@ -192,3 +192,35 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Java `String.lines()`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/String.html#lines())
 - [Error Prone — `StringSplitter`](https://errorprone.info/bugpattern/StringSplitter)
 - [Java `Pattern` Thread Safety](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/regex/Pattern.html)
+
+---
+
+## Slice 7: Bounded Agentic Triage & Patch Loop (`FR-3.1`, `FR-3.2`, `FR-3.3`)
+
+### What was built
+- **Hexagonal `LlmClient` Port & Sealed `LlmToolCall` (`com.autoheal.domain`)**:
+  - `LlmClient.nextAction(List<LlmMessage>)` decouples the agentic loop from any specific LLM SDK or HTTP client.
+  - `LlmToolCall` is a Java 21 `sealed interface` permitting exactly `ListFilesCall`, `ReadFileCall`, `SearchCodeCall`, and `ProposePatchCall`.
+  - `LlmUsage`, `AttemptRecord`, `AttemptOutcome`, `HealingContext`, and `HealingResult` capture per-call tokens/cost/latency (`FR-3.3`) and per-attempt outcomes (`VERIFIED`, `POLICY_VIOLATION`, `APPLY_ERROR`, `COMPILE_ERROR`, `TEST_FAILURE`, `TIMEOUT`, `TOOL_LIMIT_EXCEEDED`).
+- **Bounded Self-Correction Loop (`AgenticHealingService`)**:
+  - Enforces max **3 patch attempts** and max **15 tool calls per attempt** (`FR-3.2`).
+  - Copies the baseline workspace into an isolated per-attempt temp directory (cleaned up in `finally`) so failed attempts never contaminate subsequent attempts.
+  - Runs the full verification pipeline per proposal: `TestIntegrityPolicy.validatePatch` → `PatchApplier.apply` → `SandboxRunner.runTests` → `SurefireReportParser.parse` → `TestIntegrityPolicy.verifyOutcome`, feeding distilled errors back into the LLM conversation on failure.
+
+### Key Concepts Used
+- **Java 21 `sealed interface` + Exhaustive Pattern-Matching `switch`**: Declaring `sealed interface LlmToolCall permits ...` tells the compiler the exact closed set of tool calls. A `switch (toolCall)` over those record types requires no `default` branch—if a new tool is added later, the compiler immediately flags every unhandled `switch`.
+- **Hexagonal Testing (Ports & Adapters)**: By putting `LlmClient` and `SandboxRunner` in `com.autoheal.domain`, we tested all retry, policy, apply-error, compile-error, timeout, and tool-cap branches deterministically in <300ms using a scripted fake `LlmClient`—without touching network APIs or spending tokens.
+- **`BigDecimal` for Financial/Cost Accounting**: Using `BigDecimal` (not `double`) for `estimatedCostUsd` prevents binary floating-point rounding drift when summing per-call LLM costs across attempts and daily budget checks.
+
+### Likely Interview Questions
+1. **Why use a Java 21 `sealed interface` for `LlmToolCall` instead of a generic `Map<String, Object>`?**
+   - *Answer:* A sealed hierarchy gives compile-time type safety and exhaustive `switch` checks. Every tool's arguments are validated in its `record` compact constructor, and adding a new tool forces the compiler to catch any missed dispatch branch.
+2. **Why copy the baseline workspace before every patch attempt?**
+   - *Answer:* If attempt 1 partially modifies code or introduces a compilation error, applying attempt 2 on top of dirty files would cause search/replace mismatches or leftover broken code. Starting each attempt from a clean copy (and deleting it in `finally`) keeps attempts isolated and reproducible.
+3. **Why use `BigDecimal` instead of `double` for LLM cost accounting?**
+   - *Answer:* Binary floating-point (`double`) cannot represent base-10 fractions like `0.0001` accurately, leading to drift when summing thousands of API calls. `BigDecimal` preserves exact decimal precision matching PostgreSQL's `NUMERIC(10, 6)`.
+
+### Official Docs
+- [JEP 409 — Sealed Classes](https://openjdk.org/jeps/409)
+- [JEP 441 — Pattern Matching for `switch`](https://openjdk.org/jeps/441)
+- [Java `BigDecimal`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/math/BigDecimal.html)
