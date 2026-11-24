@@ -162,3 +162,33 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Java NIO `Path.toRealPath()`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Path.html#toRealPath(java.nio.file.LinkOption...))
 - [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)
 - [java-diff-utils](https://github.com/java-diff-utils/java-diff-utils)
+
+---
+
+## Slice 6: Log Distiller (`FR-2.1`)
+
+### What was built
+- **`DistilledLog` record** (`com.autoheal.domain`): immutable result holding the distilled summary, deduplicated `failingTests`, deduplicated `referencedFiles` (`.java` filenames extracted from stack frames and compiler errors for `FR-2.2` commit-diff lookup), raw/distilled lengths, and `reductionPercent()`.
+- **`LogDistiller`** (`com.autoheal.service`):
+  - Caps input at 500 KB (`500 * 1024` chars) to protect heap memory.
+  - Strips Maven `[INFO]` chatter, download progress lines, Spring Boot banners, and framework stack frames (`org.springframework.*`, `java.base/*`, `jdk.internal.*`, `org.junit.*`, `sun.*`, `org.hibernate.*`, `org.mockito.*`, `org.apache.maven.*`), collapsing consecutive omitted frames into a single count marker.
+  - Preserves the full `Caused by:` chain, application-package stack frames (collapsing repeated recursive frames), failing test headers + assertions, and `javac` compiler errors with file/line numbers.
+  - Achieves ≥75% noise reduction on realistic Maven failure logs (verified in `LogDistillerTest`).
+
+### Key Concepts Used
+- **`String.lines()` vs `String.split("\r?\n")`**: Java 11+ `String.lines()` streams lines across `\n`, `\r\n`, and `\r` without compiling a regex or hitting `String.split`'s trailing-empty-string quirk (which Error Prone flags via `[StringSplitter]`).
+- **`LinkedHashSet` for deterministic deduplication**: Preserves first-seen order when collecting `failingTests` and `referencedFiles` while avoiding duplicates—keeping LLM prompts and unit tests deterministic.
+- **Pre-compiled `static final Pattern`s**: Regex patterns are compiled once at class load time and are thread-safe to share across Java 21 virtual threads (`Pattern` is immutable; only `Matcher` is per-call).
+
+### Likely Interview Questions
+1. **Why distill Maven logs before sending them to the LLM instead of passing the full output?**
+   - *Answer:* Raw Maven + Spring stack traces are 75–95% noise (artifact downloads, reflection/JUnit/Spring proxy frames). Distilling cuts token cost and latency dramatically, keeps the prompt inside context limits, and improves fix accuracy by focusing attention on the root `Caused by:` chain and application frames.
+2. **Why is `java.util.regex.Pattern` safe as a `static final` field across virtual threads, while `Matcher` is not?**
+   - *Answer:* `Pattern` is immutable and compiled once; calling `pattern.matcher(line)` creates a lightweight, local `Matcher` holding per-match cursor state, so concurrent threads never share mutable state.
+3. **Why did Error Prone warn on `String.split` and why is `String.lines()` better here?**
+   - *Answer:* `String.split` silently drops trailing empty strings, treats its argument as a regex, and returns `[""]` on an empty string. `String.lines()` is purpose-built for line splitting, handles all line terminators cleanly, and allocates less.
+
+### Official Docs
+- [Java `String.lines()`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/String.html#lines())
+- [Error Prone — `StringSplitter`](https://errorprone.info/bugpattern/StringSplitter)
+- [Java `Pattern` Thread Safety](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/regex/Pattern.html)
