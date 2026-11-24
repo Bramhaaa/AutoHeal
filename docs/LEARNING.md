@@ -326,3 +326,32 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Spring Boot — Testcontainers `@ServiceConnection`](https://docs.spring.io/spring-boot/reference/testing/testcontainers.html)
 - [Flyway — Versioned Migrations](https://documentation.red-gate.com/fd/migrations-184127470.html)
 - [pgvector — HNSW Indexing](https://github.com/pgvector/pgvector#hnsw)
+
+
+---
+
+## Slice 11: Scenario Catalog & Persisted SSE Event Stream Service (`FR-1.1`, `PRD §4.2`)
+
+### What was built
+- **Domain Types (`com.autoheal.domain`)**:
+  - `ScenarioDefinition` record (`id`, `title`, `description`, `language`, `branch`, `oracleTestClass`, `oracleTestMethod`), `RunMode` enum (`LIVE`, `REPLAY`), and typed exceptions (`ScenarioNotFoundException`, `QueueCapacityExceededException`).
+- **Scenario Registry (`ScenarioCatalog` in `com.autoheal.service`)**:
+  - Registers the 4 deterministic `demo-service` bug branches (`payment-npe-01`, `pagination-off-by-one-02`, `inventory-race-03`, `jpql-typo-04`) in stable order (`LinkedHashMap` wrapped with `Collections.unmodifiableMap`) with their exact JUnit oracle tests.
+- **Persisted + Live SSE Event Stream (`IncidentEventStreamService` in `com.autoheal.service`)**:
+  - `publish(...)` serializes structured event payloads to JSON, persists them via `IncidentRepository.appendEvent(...)` (receiving a monotonic `event_seq`), fans out to live subscribers, and cleans up subscriber lists on terminal `COMPLETED` / `FAILED` events.
+  - `subscribe(runId, lastEventId, onEvent)` registers the subscriber *before* reading historical events (`findEventsAfter(runId, lastEventId)`), and `OrderedSubscriber` deduplicates by `eventSeq > lastDeliveredSeq` inside a synchronized guard.
+
+### Key Concepts Used
+- **Subscribe-Before-Replay Pattern (No-Gap SSE Resume)**: If you query the DB first and subscribe second, an event published in the gap between those two calls is lost forever. Subscribing first and deduplicating by monotonic `eventSeq` guarantees at-least-once persistence with exactly-once ordered delivery to each SSE client.
+- **`ConcurrentHashMap` + `CopyOnWriteArrayList`**: Safe concurrent reads/writes across virtual threads with minimal lock contention—ideal when reads (event fan-out) far outnumber writes (client connect/disconnect).
+- **Ordered Immutability (`LinkedHashMap` + `Collections.unmodifiableMap`)**: Unlike `Map.copyOf(...)` (whose iteration order is randomized per JVM run), wrapping a `LinkedHashMap` preserves deterministic scenario ordering for the Playground API.
+
+### Likely Interview Questions
+1. **How do you prevent losing or duplicating SSE events when a browser reconnects with `Last-Event-ID`?**
+   - *Answer:* We persist every event to `incident_events` with a strictly monotonic `event_seq`. On reconnect, we register the live subscriber *before* querying `WHERE event_seq > :lastEventId`, and each subscriber tracks `lastDeliveredSeq` inside a synchronized method so any overlap between DB replay and live fan-out is silently skipped.
+2. **What happens if one SSE client's socket drops while another client is watching the same run?**
+   - *Answer:* Delivery wraps each subscriber callback at the boundary—if one throws a `RuntimeException` (disconnected client), we log a warning and remove only that subscriber from the `CopyOnWriteArrayList`, so all other subscribers continue uninterrupted.
+
+### Official Docs
+- [MDN — Using Server-Sent Events (`Last-Event-ID`)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
+- [Java `ConcurrentHashMap` & `CopyOnWriteArrayList`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/package-summary.html)
