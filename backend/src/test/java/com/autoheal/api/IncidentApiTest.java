@@ -169,5 +169,10 @@ class IncidentApiTest {
     mockMvc
         .perform(get("/api/v1/incidents/" + runId + "/stream").header("Last-Event-ID", "1"))
         .andExpect(status().isOk());
+
+    mockMvc
+        .perform(get("/actuator/health"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status", is("UP")));
   }
 }

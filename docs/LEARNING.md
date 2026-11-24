@@ -426,3 +426,37 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Bucket4j Documentation](https://bucket4j.com/)
 - [Spring MVC — `SseEmitter`](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-http-streaming)
 - [Spring MVC — `@RestControllerAdvice`](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-advice.html)
+
+
+---
+
+## Slice 14: Scheduled Sweeper, Actuator Health & Production VM Stack (`FR-4.3`, `PRD §2.2`, `§4.2`, `§8` — End of Week 3 MVP)
+
+### What was built
+- **Scheduled Sandbox & Workspace Sweeper (`SandboxSweeperService` in `com.autoheal.service`)**:
+  - Exposed `default int sweepExpiredContainers(Duration maxAge)` on `SandboxRunner` (overridden by `DockerSandboxRunner`).
+  - Enabled `@EnableScheduling` on `AutoHealApplication`; `SandboxSweeperService.sweep()` runs every 60s (`autoheal.sweeper.interval-ms`) to force-remove `autoheal=true` containers older than 90s and delete orphan workspaces under `autoheal.workspace.root` older than 1 hour, isolating Docker errors so workspace cleanup still runs.
+- **Health Endpoint (`spring-boot-starter-actuator`)**:
+  - Exposes only `/actuator/health` (`management.endpoints.web.exposure.include: health`) for container healthchecks and uptime monitoring (`IncidentApiTest`).
+- **Single-VM Production Deployment Stack**:
+  - `backend/Dockerfile`: multi-stage Maven → Temurin 21 JRE image running as **UID `1000:1000`** with `/var/autoheal/runs` owned by UID `1000` (matching the non-root sandbox container UID).
+  - `infra/nginx/autoheal.conf`: overwrites `X-Forwarded-For` with `$remote_addr`, and disables buffering (`proxy_buffering off`, `proxy_cache off`, `X-Accel-Buffering no`, `proxy_read_timeout 3600s`) on `/api/v1/incidents/*/stream`.
+  - `docker-compose.prod.yml` & `.env.example`: wires `postgres` (`pgvector/pgvector:pg16`), `backend` (with `/var/run/docker.sock` and matching `/var/autoheal/runs:/var/autoheal/runs` bind mount), and `nginx`.
+
+### Key Concepts Used
+- **Sibling Container Bind-Mount Path Parity**: When a containerized backend spawns sibling sandbox containers via `/var/run/docker.sock`, the Docker daemon resolves bind-mount source paths on the *host* filesystem, not inside the backend container. Mounting `/var/autoheal/runs:/var/autoheal/runs` at the identical path on both host and backend guarantees every `/var/autoheal/runs/<runId>` bind mount resolves cleanly.
+- **Nginx SSE Reverse Proxy (`proxy_buffering off`)**: By default, Nginx buffers upstream responses in 4–8 KB chunks before flushing to the browser, which stalls small SSE events until the buffer fills or times out. Turning off buffering and setting `Connection ""` over HTTP/1.1 delivers SSE events immediately.
+- **Defense-in-Depth Cleanup (`try/finally` + Scheduled Sweeper)**: `try/finally` handles normal completion and exceptions, while a periodic sweeper recovers from hard JVM kills (`SIGKILL`, OOM, VM reboot) where `finally` blocks never execute.
+
+### Likely Interview Questions
+1. **Why must `/var/autoheal/runs` be mounted at the exact same path inside the backend container as on the host VM?**
+   - *Answer:* Because the backend talks to the host's Docker daemon over `/var/run/docker.sock` (Docker-out-of-Docker, not Docker-in-Docker). When the backend tells Docker to bind-mount `workspaceDir` into a sandbox container, the Docker daemon looks up that path on the *host*. Identical paths prevent "directory not found" or empty-mount bugs.
+2. **Why do you need a scheduled sweeper if `DockerSandboxRunner` and `WorkspaceHandle` already clean up in `try/finally`?**
+   - *Answer:* If the backend process crashes (`SIGKILL` / OOM) or the VM restarts mid-run, `finally` blocks never run. The sweeper finds any `autoheal=true` container older than 90s and any workspace directory older than 1 hour and removes them automatically.
+3. **Why does Nginx need `proxy_buffering off` and `proxy_read_timeout 3600s` on the SSE endpoint?**
+   - *Answer:* Without `proxy_buffering off`, Nginx holds small SSE frames in memory instead of streaming them in real time. Without a long `proxy_read_timeout`, Nginx closes the SSE connection after 60 seconds of quiet time.
+
+### Official Docs
+- [Spring Boot — Actuator Health Endpoint](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)
+- [Spring Framework — `@Scheduled`](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
+- [Nginx — `proxy_buffering`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_buffering)

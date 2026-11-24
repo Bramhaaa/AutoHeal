@@ -99,6 +99,7 @@ public class DockerSandboxRunner implements SandboxRunner {
     return new SandboxResult(exitCode, timedOut, durationMs, outputLines);
   }
 
+  @Override
   public int sweepExpiredContainers(Duration maxAge) {
     long cutoffEpochSeconds = Instant.now().minus(maxAge).getEpochSecond();
     List<Container> containers =

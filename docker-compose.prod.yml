@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: autoheal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autoheal
+      POSTGRES_USER: ${DATABASE_USER:-autoheal}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+    volumes:
+      - autoheal-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-autoheal} -d autoheal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: autoheal-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Add host docker group GID so UID 1000 can talk to /var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/autoheal
+      DATABASE_USER: ${DATABASE_USER:-autoheal}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      DEMO_REPO_URI: ${DEMO_REPO_URI:?DEMO_REPO_URI must be set}
+      DEMO_REPO_NAME: ${DEMO_REPO_NAME:-autoheal-demo-service}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      AUTOHEAL_TRUST_FORWARDED_FOR: "true"
+      AUTOHEAL_PR_CREATION_ENABLED: ${AUTOHEAL_PR_CREATION_ENABLED:-true}
+      AUTOHEAL_WORKSPACE_ROOT: /var/autoheal/runs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same host path inside container so sibling sandbox bind mounts resolve on the Docker host
+      - /var/autoheal/runs:/var/autoheal/runs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: autoheal-nginx
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./infra/nginx/autoheal.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  autoheal-pgdata:

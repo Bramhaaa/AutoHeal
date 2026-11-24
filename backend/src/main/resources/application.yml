@@ -36,3 +36,13 @@ autoheal:
     trust-forwarded-for: ${AUTOHEAL_TRUST_FORWARDED_FOR:false}
   cors:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
+  sweeper:
+    interval-ms: ${AUTOHEAL_SWEEPER_INTERVAL_MS:60000}
+  workspace:
+    root: ${AUTOHEAL_WORKSPACE_ROOT:${java.io.tmpdir}/autoheal-runs}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
