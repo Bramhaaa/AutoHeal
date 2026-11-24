@@ -25,3 +25,9 @@ Format: `## ADR-NNN: Title` → **Context**, **Decision**, **Alternatives**, **C
 **Decision:** Keep `--read-only` rootfs enabled with `tmpfs` at `/tmp` (`rw,noexec,nosuid,size=128m`) and bind-mounted `/workspace` (spike passed in 11s, Maven test time 8.7s). Use `docker-java-transport-zerodep` for reliable Unix-socket transport without BOM conflicts.
 **Alternatives:** Drop `--read-only`; pin older `httpclient5` (risks breaking Spring Boot starters).
 **Consequences:** Strongest container filesystem isolation with zero dependency conflicts across macOS Docker Desktop and Linux VMs.
+
+## ADR-005: Spring `JdbcClient` + Flyway over JPA/Hibernate
+**Context:** The PRD §5 schema uses PostgreSQL-native `JSONB` (`incident_events.payload`, `benchmark_reports`), `pgvector` `vector(768)` (`incident_memory.embedding`), `TIMESTAMPTZ`, and `NUMERIC(10, 6)`, while ArchUnit requires `com.autoheal.domain` to contain pure immutable Java 21 `record` types with zero Spring/JPA imports.
+**Decision:** Use Spring Boot 3.4's `spring-boot-starter-jdbc` (`JdbcClient`) with Flyway versioned SQL migrations (`V1__initial_schema.sql`) and explicit SQL in `JdbcIncidentRepository`.
+**Alternatives:** Spring Data JPA / Hibernate (requires mutable `@Entity` classes, custom `JSONB`/`pgvector` Hibernate types, and risks lazy-loading/N+1 surprises).
+**Consequences:** Zero ORM impedance mismatch, full control over Postgres-native SQL (`CAST(... AS jsonb)`, `SELECT ... FOR UPDATE`, `RETURNING`), direct mapping to domain records, and crystal-clear queries easy to defend in interviews.

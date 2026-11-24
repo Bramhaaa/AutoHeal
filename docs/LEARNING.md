@@ -287,3 +287,42 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [GitHub REST API — Git Database (Blobs, Trees, Commits, Refs)](https://docs.github.com/en/rest/git)
 - [GitHub REST API — Pull Requests (`draft`)](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request)
+
+
+---
+
+## Slice 10: PostgreSQL 16 + `pgvector`, Flyway & JDBC Persistence (`PRD §5`, `ADR-005`)
+
+### What was built
+- **Local Postgres + `pgvector` Compose Stack (`docker-compose.yml`)**:
+  - Runs `pgvector/pgvector:pg16` with healthcheck (`pg_isready`), persistent named volume, and env-var password/port overrides (`POSTGRES_PASSWORD`, `POSTGRES_PORT`).
+- **Flyway Schema Migration (`backend/src/main/resources/db/migration/V1__initial_schema.sql`)**:
+  - Installs `vector` extension and creates all 6 PRD §5 tables: `incident_runs`, `incident_attempts` (`UNIQUE(run_id, attempt_no)`), `llm_calls` (with `created_at` index for daily budget sums), `incident_events` (`JSONB` payload + `UNIQUE(run_id, event_seq)`), `incident_memory` (`vector(768)` + HNSW cosine index), and `benchmark_reports`.
+- **Pure Domain Models & `IncidentRepository` Port (`com.autoheal.domain`)**:
+  - Enums (`IncidentSource`, `IncidentStatus`, `IncidentStage`, `IncidentEventType`) and immutable records (`IncidentRun`, `IncidentAttempt`, `LlmCallRecord`, `IncidentEvent`) with zero Spring/JDBC imports (enforced by ArchUnit).
+- **JDBC Persistence Adapter (`JdbcIncidentRepository` in `com.autoheal.infra.persistence`)**:
+  - Implemented with Spring Boot 3.4's `JdbcClient` (`ADR-005`).
+  - `appendEvent` uses `@Transactional` + `SELECT 1 FROM incident_runs WHERE id = :runId FOR UPDATE` before computing `COALESCE(MAX(event_seq), 0) + 1`, guaranteeing gap-free monotonic SSE `event_seq` under concurrent writers.
+  - Uses `OffsetDateTime` in UTC for `TIMESTAMPTZ` columns and `BigDecimal` for `NUMERIC(10, 6)` USD cost aggregation.
+- **Testcontainers Integration Tests (`PostgresTestContainer`, `JdbcIncidentRepositoryTest`, `AutoHealApplicationTest`)**:
+  - Uses Spring Boot `@ServiceConnection` with `pgvector/pgvector:pg16` (and `docker-java.properties` `api.version=1.44` for Docker Engine 29 compatibility) to verify Flyway migrations, HNSW index, run lifecycle, unique attempt constraint, daily cost windowing, and SSE `Last-Event-ID` replay.
+
+### Key Concepts Used
+- **Spring `JdbcClient` vs JPA/Hibernate**: `JdbcClient` (Spring Framework 6.1+) is a fluent wrapper over JDBC that lets you write explicit SQL with named parameters and map rows directly to immutable Java 21 `record`s—ideal when using Postgres-specific features (`JSONB`, `pgvector`, `RETURNING`, `FOR UPDATE`).
+- **Flyway Versioned Migrations (`V1__*.sql`)**: Tracks applied SQL scripts in `flyway_schema_history` with checksums so every environment (local, Testcontainers, production VM) gets the exact same schema automatically at startup.
+- **Row-Level Locking (`SELECT ... FOR UPDATE`) + `@Transactional`**: Locking the parent `incident_runs` row inside a transaction serializes concurrent `appendEvent` calls for the same run without locking other runs, preventing `UNIQUE (run_id, event_seq)` race conditions.
+- **Spring Boot `@ServiceConnection` + Testcontainers**: Automatically injects the ephemeral container's dynamic JDBC URL, username, and password into Spring Boot's `DataSource` and Flyway without manual `@DynamicPropertySource` boilerplate.
+
+### Likely Interview Questions
+1. **Why did you choose `JdbcClient` + Flyway instead of Spring Data JPA / Hibernate?**
+   - *Answer:* Our schema relies on PostgreSQL-specific types (`JSONB`, `pgvector` `vector(768)`) and our hexagonal architecture keeps `com.autoheal.domain` free of framework annotations. `JdbcClient` maps explicit SQL straight into Java 21 `record`s with zero entity-mapping overhead or lazy-loading pitfalls.
+2. **How do you guarantee SSE `event_seq` is strictly monotonic per run if two threads emit events at once?**
+   - *Answer:* Inside `@Transactional`, `appendEvent` acquires a row-level lock on the parent `incident_runs` row (`SELECT 1 FROM incident_runs WHERE id = :runId FOR UPDATE`) before inserting `COALESCE(MAX(event_seq), 0) + 1`. That serializes writes per run while allowing different runs to execute in parallel, and `UNIQUE (run_id, event_seq)` enforces the invariant at the DB level.
+3. **Why use an HNSW index instead of IVFFlat on `incident_memory.embedding`?**
+   - *Answer:* IVFFlat requires training cluster centroids on representative data before building the index, so it performs poorly when created on an empty table at migration time. HNSW builds a navigable graph incrementally and works well even starting from zero rows.
+
+### Official Docs
+- [Spring Framework — `JdbcClient`](https://docs.spring.io/spring-framework/reference/data-access/jdbc/core.html#jdbc-JdbcClient)
+- [Spring Boot — Testcontainers `@ServiceConnection`](https://docs.spring.io/spring-boot/reference/testing/testcontainers.html)
+- [Flyway — Versioned Migrations](https://documentation.red-gate.com/fd/migrations-184127470.html)
+- [pgvector — HNSW Indexing](https://github.com/pgvector/pgvector#hnsw)
