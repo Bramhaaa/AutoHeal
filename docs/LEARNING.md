@@ -129,3 +129,36 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [OWASP XXE Prevention Cheat Sheet (Java)](https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#jaxp-documentbuilderfactory-saxparserfactory-and-dom4j)
 - [Eclipse JGit Documentation](https://eclipse.dev/jgit/documentation/)
 - [Java `AutoCloseable`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/AutoCloseable.html)
+
+---
+
+## Slice 5: Path-Safe Workspace Tools, Test Integrity Policy & Patch Applier (`FR-3.1`, `FR-3.4`, `ADR-001`, `ADR-003`)
+
+### What was built
+- **Path-Traversal Guard (`WorkspacePathResolver`) & Local Tools (`WorkspaceTools`)**:
+  - Rejects `..`, absolute paths, NUL bytes, and symlinks escaping the workspace root (including non-existent targets checked via their nearest existing ancestor).
+  - Exposes `listFiles(dir, glob)`, `readFile(path, startLine, endLine)` (capped at 400 lines), and `searchCode(query, glob)` (literal substring match, skips `.git/`, `target/`, `node_modules/`, binary files, and escaping symlinks).
+- **Test Integrity Policy (`TestIntegrityPolicy`)**:
+  - Pre-sandbox `validatePatch(...)`: requires at least one edit, restricts edits strictly to existing files under `src/main/**`, rejects tampering with existing tests / `pom.xml` / `.mvn/**` / `mvnw` / CI files, allows brand-new test files under `src/test/**` only if they don't overwrite existing tests or contain `@Disabled`, `@Ignore`, `assumeTrue(false)`, `assumeFalse(true)`, or `Assumptions.abort(...)`.
+  - Post-sandbox `verifyOutcome(...)`: marks a run verified only when exit code is `0`, post-patch failures/errors are `0`, every originally failing Surefire oracle test now passes, and executed test count is `>=` baseline.
+- **Search/Replace Patch Applier (`PatchApplier`)**:
+  - Implements `ADR-001`: validates and stages all edits in memory first (exact-match once; 0 matches = not found, >1 matches = ambiguous) so a partial failure never leaves the workspace half-patched, then writes files and generates a canonical unified diff via `java-diff-utils`.
+
+### Key Concepts Used
+- **Canonical Path Resolution (`Path.normalize()` vs `Path.toRealPath()`)**: `normalize()` is purely lexical—it collapses `a/../b` without touching the filesystem, so it cannot detect symlinks. Calling `toRealPath()` resolves OS symlinks and guarantees the physical target stays inside `workspaceRoot.toRealPath()`.
+- **Two-Phase Validate-Then-Write (Atomic Staging)**: Staging all search/replace edits in a `LinkedHashMap<Path, String>` before writing anything to disk guarantees all-or-nothing patch application without needing complex rollback code.
+- **Literal Search vs. Regex (`String.indexOf` / `contains`)**: Using exact literal substring matching for both `PatchApplier` and `searchCode` avoids regex escaping bugs (`$`, `(`, `[`) and eliminates ReDoS (catastrophic backtracking) from untrusted LLM inputs.
+- **Server-Side Unified Diff (`java-diff-utils`)**: LLMs frequently miscount unified diff hunk headers (`@@ -12,7 +12,9 @@`). Having the LLM submit exact search/replace blocks and computing the unified diff server-side removes that entire failure class.
+
+### Likely Interview Questions
+1. **Why isn't `Path.normalize().startsWith(root)` alone enough to prevent path traversal?**
+   - *Answer:* `normalize()` only removes `..` lexically; it does not follow symbolic links. A symlink inside the workspace pointing to `/etc/passwd` passes `normalize().startsWith(root)`, so you must also resolve `toRealPath()` (or the nearest existing ancestor's `toRealPath()` for files not yet created) and check `startsWith(realRoot)`.
+2. **How do you prevent an AI coding agent from "cheating" to make tests pass?**
+   - *Answer:* Enforce a deterministic Test Integrity Policy in code before and after sandboxing: edits are restricted to `src/main/**`, existing tests and build files (`pom.xml`, `.mvn/**`, CI) are immutable, new tests cannot use `@Disabled`/`assumeTrue(false)`, and verification parses Surefire XML to confirm the exact originally failing test now passes and total executed tests did not drop.
+3. **Why use search/replace blocks instead of asking the LLM for a `git diff`?**
+   - *Answer:* LLMs are notoriously bad at line-number arithmetic and hunk headers in unified diffs, causing `git apply` failures. Exact-match search/replace blocks fail loudly with a clear message if missing or ambiguous, and the backend generates a guaranteed-valid unified diff with `java-diff-utils`.
+
+### Official Docs
+- [Java NIO `Path.toRealPath()`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Path.html#toRealPath(java.nio.file.LinkOption...))
+- [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal)
+- [java-diff-utils](https://github.com/java-diff-utils/java-diff-utils)

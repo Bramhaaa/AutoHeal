@@ -27,6 +27,7 @@
         <archunit.version>1.3.0</archunit.version>
         <docker-java.version>3.4.2</docker-java.version>
         <jgit.version>6.10.0.202406032230-r</jgit.version>
+        <java-diff-utils.version>4.12</java-diff-utils.version>
     </properties>
 
     <dependencies>
@@ -48,6 +49,11 @@
             <groupId>org.eclipse.jgit</groupId>
             <artifactId>org.eclipse.jgit</artifactId>
             <version>${jgit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.java-diff-utils</groupId>
+            <artifactId>java-diff-utils</artifactId>
+            <version>${java-diff-utils.version}</version>
         </dependency>
 
         <dependency>
