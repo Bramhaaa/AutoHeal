@@ -12,6 +12,8 @@ public interface IncidentRepository {
 
   Optional<IncidentRun> findRunById(UUID runId);
 
+  Optional<IncidentRun> findLatestSucceededRunByScenario(String scenarioId);
+
   void updateRunStatus(UUID runId, IncidentStatus status);
 
   void completeRun(

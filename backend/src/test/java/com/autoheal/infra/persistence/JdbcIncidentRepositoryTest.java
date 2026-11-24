@@ -248,6 +248,82 @@ class JdbcIncidentRepositoryTest {
     assertThat(replayed.get(1).payloadJson()).contains("\"VERIFIED\"");
   }
 
+  @Test
+  void findsLatestNonReplaySucceededRunForScenario() {
+    String scenario = "jpql-typo-04";
+    Instant base = Instant.now().truncatedTo(ChronoUnit.MICROS);
+
+    UUID failedId = UUID.randomUUID();
+    repository.createRun(
+        IncidentRun.queued(
+            failedId, IncidentSource.PLAYGROUND, scenario, "owner/demo", "sha1", true, base));
+    repository.completeRun(
+        failedId,
+        IncidentStatus.FAILED,
+        "MAX_ATTEMPTS",
+        3,
+        null,
+        null,
+        null,
+        100,
+        50,
+        BigDecimal.ZERO,
+        1000L,
+        base.plusSeconds(10));
+
+    UUID succeededId = UUID.randomUUID();
+    repository.createRun(
+        IncidentRun.queued(
+            succeededId,
+            IncidentSource.PLAYGROUND,
+            scenario,
+            "owner/demo",
+            "sha2",
+            true,
+            base.plusSeconds(20)));
+    repository.completeRun(
+        succeededId,
+        IncidentStatus.SUCCEEDED,
+        null,
+        1,
+        "Fixed JPQL",
+        "diff",
+        null,
+        100,
+        50,
+        BigDecimal.ZERO,
+        1000L,
+        base.plusSeconds(30));
+
+    UUID replayId = UUID.randomUUID();
+    repository.createRun(
+        IncidentRun.queued(
+            replayId,
+            IncidentSource.REPLAY,
+            scenario,
+            "owner/demo",
+            "sha2",
+            false,
+            base.plusSeconds(40)));
+    repository.completeRun(
+        replayId,
+        IncidentStatus.SUCCEEDED,
+        null,
+        1,
+        "Fixed JPQL",
+        "diff",
+        null,
+        0,
+        0,
+        BigDecimal.ZERO,
+        500L,
+        base.plusSeconds(41));
+
+    Optional<IncidentRun> latest = repository.findLatestSucceededRunByScenario(scenario);
+    assertThat(latest).isPresent();
+    assertThat(latest.get().id()).isEqualTo(succeededId);
+  }
+
   private UUID createQueuedRun() {
     UUID runId = UUID.randomUUID();
     repository.createRun(

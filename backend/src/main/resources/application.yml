@@ -23,3 +23,10 @@ autoheal:
   github:
     token: ${GITHUB_TOKEN:}
     api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+  pipeline:
+    max-concurrent-runs: ${AUTOHEAL_MAX_CONCURRENT_RUNS:3}
+    max-queued-runs: ${AUTOHEAL_MAX_QUEUED_RUNS:10}
+    replay-event-delay-ms: ${AUTOHEAL_REPLAY_DELAY_MS:150}
+    demo-repo-uri: ${DEMO_REPO_URI:}
+    demo-repo-name: ${DEMO_REPO_NAME:autoheal-demo-service}
+    pr-creation-enabled: ${AUTOHEAL_PR_CREATION_ENABLED:false}

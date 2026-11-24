@@ -142,6 +142,11 @@ class IncidentEventStreamServiceTest {
     }
 
     @Override
+    public Optional<IncidentRun> findLatestSucceededRunByScenario(String scenarioId) {
+      return Optional.empty();
+    }
+
+    @Override
     public void updateRunStatus(UUID runId, IncidentStatus status) {}
 
     @Override

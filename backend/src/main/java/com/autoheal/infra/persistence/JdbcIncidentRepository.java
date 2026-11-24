@@ -92,6 +92,28 @@ public class JdbcIncidentRepository implements IncidentRepository {
   }
 
   @Override
+  public Optional<IncidentRun> findLatestSucceededRunByScenario(String scenarioId) {
+    Objects.requireNonNull(scenarioId, "scenarioId must not be null");
+    return jdbcClient
+        .sql(
+            """
+            SELECT id, source, scenario_id, repo_name, commit_sha, status, failure_reason,
+                   attempts_used, rag_enabled, root_cause_summary, generated_diff, pr_url,
+                   total_prompt_tokens, total_completion_tokens, estimated_cost_usd,
+                   duration_ms, created_at, completed_at
+            FROM incident_runs
+            WHERE scenario_id = :scenarioId
+              AND status = 'SUCCEEDED'
+              AND source <> 'REPLAY'
+            ORDER BY completed_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """)
+        .param("scenarioId", scenarioId)
+        .query(this::mapRun)
+        .optional();
+  }
+
+  @Override
   public void updateRunStatus(UUID runId, IncidentStatus status) {
     Objects.requireNonNull(runId, "runId must not be null");
     Objects.requireNonNull(status, "status must not be null");

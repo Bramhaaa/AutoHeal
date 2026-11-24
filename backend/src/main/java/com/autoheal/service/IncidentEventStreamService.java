@@ -42,6 +42,16 @@ public class IncidentEventStreamService {
     Objects.requireNonNull(payload, "payload must not be null");
 
     String payloadJson = serializePayload(payload);
+    return publishRawJson(runId, stage, eventType, payloadJson);
+  }
+
+  public IncidentEvent publishRawJson(
+      UUID runId, IncidentStage stage, IncidentEventType eventType, String payloadJson) {
+    Objects.requireNonNull(runId, "runId must not be null");
+    Objects.requireNonNull(stage, "stage must not be null");
+    Objects.requireNonNull(eventType, "eventType must not be null");
+    Objects.requireNonNull(payloadJson, "payloadJson must not be null");
+
     IncidentEvent saved = incidentRepository.appendEvent(runId, stage, eventType, payloadJson);
     dispatchLive(saved);
 

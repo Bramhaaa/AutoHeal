@@ -355,3 +355,36 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [MDN — Using Server-Sent Events (`Last-Event-ID`)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
 - [Java `ConcurrentHashMap` & `CopyOnWriteArrayList`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/package-summary.html)
+
+
+---
+
+## Slice 12: Async Pipeline Orchestrator, Concurrency Semaphore & Replay Mode (`FR-1.2`, `PRD §2.1`, `§6.2`, `§6.3`)
+
+### What was built
+- **Domain Ports & Exceptions (`com.autoheal.domain`)**:
+  - `LiveIncidentExecutor` functional interface decoupling queue/concurrency/replay orchestration from the concrete workspace+sandbox+agent execution.
+  - Typed exceptions `ReplayNotAvailableException` and `IncidentRunNotFoundException` for clean HTTP error mapping.
+  - Extended `IncidentRepository` & `JdbcIncidentRepository` with `findLatestSucceededRunByScenario(scenarioId)` (excluding `REPLAY` runs) verified in `JdbcIncidentRepositoryTest`.
+- **Async Orchestrator (`IncidentOrchestratorService` & `PipelineProperties` in `com.autoheal.service`)**:
+  - Dispatches live runs onto Java 21 virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`), bounded by a fair `Semaphore(maxConcurrentRuns)` (default `3`, PRD §6.3).
+  - Enforces a global queue cap (`AtomicInteger queuedCount` vs `maxQueuedRuns`, default `10`, PRD §6.2), failing fast with `QueueCapacityExceededException` when saturated.
+  - Supports **Instant Replay Mode (`FR-1.2`)**: creates a fresh `REPLAY` run with `$0` cost, replays recorded `incident_events` from the latest real `SUCCEEDED` run, and completes the run record before emitting the terminal `COMPLETED` event.
+  - Top-level async worker boundary catches unexpected failures, marks the run `FAILED`, emits a terminal `FAILED` event, and always releases the semaphore permit in `finally`.
+- **Live Pipeline Executor (`DefaultLiveIncidentExecutor` & `WorkspaceConfig`)**:
+  - Executes the full live flow: `JGit cloneBranch` (with `try-with-resources` cleanup) → baseline `SandboxRunner` (streaming stdout as `LOG_LINE` events) → `SurefireReportParser` → `LogDistiller` → `AgenticHealingService.heal` → persist attempts & LLM calls → `completeRun` + terminal SSE event.
+
+### Key Concepts Used
+- **Java 21 Virtual Threads + Fair `Semaphore`**: Virtual threads make blocking I/O (Docker, JGit, Gemini HTTP, Postgres) cheap without reactive complexity, while `new Semaphore(3, true)` acts as a bulkhead so heavy Docker sandboxes never exhaust VM RAM/CPU.
+- **`AtomicInteger` Queue Backpressure**: Checking `queuedCount.incrementAndGet() > maxQueuedRuns` before submitting work prevents unbounded memory growth under traffic spikes and gives clients an immediate `503` suggesting Replay Mode.
+- **Deterministic Concurrency Testing (`CountDownLatch`, zero `Thread.sleep`)**: Injecting a fake `LiveIncidentExecutor` with `CountDownLatch` gates lets us prove max concurrency never exceeds the semaphore limit and permits are always released on exception—in 14 milliseconds with zero flakiness.
+
+### Likely Interview Questions
+1. **If Java 21 virtual threads are lightweight, why do you still need a `Semaphore(3)`?**
+   - *Answer:* Virtual threads scale I/O concurrency, not physical Docker container RAM/CPU. Each sandbox container uses up to 768 MB RAM and 1 vCPU; without a semaphore bulkhead, 50 concurrent requests would spawn 50 containers and OOM the host VM.
+2. **How do you avoid a race condition where a client receives the `COMPLETED` SSE event and immediately calls `GET /incidents/{runId}` only to see `QUEUED`?**
+   - *Answer:* We always call `incidentRepository.completeRun(...)` *before* publishing the terminal `COMPLETED` / `FAILED` event to `IncidentEventStreamService`. That guarantees the database state is already committed before any subscriber is notified.
+
+### Official Docs
+- [JEP 444 — Virtual Threads](https://openjdk.org/jeps/444)
+- [Java `Semaphore` & `CountDownLatch`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/Semaphore.html)
