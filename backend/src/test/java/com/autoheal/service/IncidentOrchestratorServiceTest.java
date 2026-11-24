@@ -17,6 +17,8 @@ import com.autoheal.domain.LlmCallRecord;
 import com.autoheal.domain.QueueCapacityExceededException;
 import com.autoheal.domain.ReplayNotAvailableException;
 import com.autoheal.domain.RunMode;
+import com.autoheal.domain.ScenarioDefinition;
+import com.autoheal.domain.WebhookFailureEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -32,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
 class IncidentOrchestratorServiceTest {
@@ -49,19 +52,20 @@ class IncidentOrchestratorServiceTest {
     CountDownLatch allDone = new CountDownLatch(3);
 
     LiveIncidentExecutor executor =
-        (runId, scenario) -> {
-          int current = active.incrementAndGet();
-          maxActive.accumulateAndGet(current, Math::max);
-          twoRunning.countDown();
-          try {
-            releaseWorkers.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          } finally {
-            active.decrementAndGet();
-            allDone.countDown();
-          }
-        };
+        liveOnly(
+            (runId, scenario) -> {
+              int current = active.incrementAndGet();
+              maxActive.accumulateAndGet(current, Math::max);
+              twoRunning.countDown();
+              try {
+                releaseWorkers.await(5, TimeUnit.SECONDS);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              } finally {
+                active.decrementAndGet();
+                allDone.countDown();
+              }
+            });
 
     try (ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor()) {
       IncidentOrchestratorService orchestrator =
@@ -93,14 +97,15 @@ class IncidentOrchestratorServiceTest {
     CountDownLatch firstStarted = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
     LiveIncidentExecutor blockingExecutor =
-        (runId, scenario) -> {
-          firstStarted.countDown();
-          try {
-            release.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-        };
+        liveOnly(
+            (runId, scenario) -> {
+              firstStarted.countDown();
+              try {
+                release.await(5, TimeUnit.SECONDS);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+            });
 
     try (ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor()) {
       IncidentOrchestratorService orchestrator =
@@ -166,9 +171,10 @@ class IncidentOrchestratorServiceTest {
               new ScenarioCatalog(),
               repo,
               stream,
-              (runId, scenario) -> {
-                throw new AssertionError("Live executor must not run in REPLAY mode");
-              },
+              liveOnly(
+                  (runId, scenario) -> {
+                    throw new AssertionError("Live executor must not run in REPLAY mode");
+                  }),
               props,
               vthreads);
 
@@ -206,7 +212,7 @@ class IncidentOrchestratorServiceTest {
     try (ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor()) {
       IncidentOrchestratorService orchestrator =
           new IncidentOrchestratorService(
-              new ScenarioCatalog(), repo, stream, (r, s) -> {}, props, vthreads);
+              new ScenarioCatalog(), repo, stream, liveOnly((r, s) -> {}), props, vthreads);
 
       assertThatThrownBy(() -> orchestrator.triggerSimulation("jpql-typo-04", RunMode.REPLAY))
           .isInstanceOf(ReplayNotAvailableException.class);
@@ -226,12 +232,13 @@ class IncidentOrchestratorServiceTest {
     AtomicInteger calls = new AtomicInteger();
 
     LiveIncidentExecutor flakyExecutor =
-        (runId, scenario) -> {
-          if (calls.incrementAndGet() == 1) {
-            throw new IllegalStateException("docker daemon unreachable");
-          }
-          secondRanLatch.countDown();
-        };
+        liveOnly(
+            (runId, scenario) -> {
+              if (calls.incrementAndGet() == 1) {
+                throw new IllegalStateException("docker daemon unreachable");
+              }
+              secondRanLatch.countDown();
+            });
 
     try (ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor()) {
       IncidentOrchestratorService orchestrator =
@@ -260,6 +267,68 @@ class IncidentOrchestratorServiceTest {
       orchestrator.triggerSimulation("jpql-typo-04", RunMode.LIVE);
       assertThat(secondRanLatch.await(5, TimeUnit.SECONDS)).isTrue();
     }
+  }
+
+  @Test
+  void triggersWebhookRunAndEnforcesQueueCapacity() throws Exception {
+    InMemoryIncidentRepository repo = new InMemoryIncidentRepository();
+    IncidentEventStreamService stream = new IncidentEventStreamService(repo, new ObjectMapper());
+    PipelineProperties props = new PipelineProperties(1, 1, 0L, "", "owner/demo-service", false);
+
+    CountDownLatch started = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    CountDownLatch completed = new CountDownLatch(2);
+
+    LiveIncidentExecutor webhookExecutor =
+        new LiveIncidentExecutor() {
+          @Override
+          public void executeLiveRun(UUID runId, ScenarioDefinition scenario) {}
+
+          @Override
+          public void executeWebhookRun(UUID runId, WebhookFailureEvent event) {
+            started.countDown();
+            try {
+              release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            } finally {
+              completed.countDown();
+            }
+          }
+        };
+
+    WebhookFailureEvent event =
+        new WebhookFailureEvent(
+            "del-1", "acme", "demo", "https://github.com/acme/demo.git", "main", "sha1", 100L);
+
+    try (ExecutorService vthreads = Executors.newVirtualThreadPerTaskExecutor()) {
+      IncidentOrchestratorService orchestrator =
+          new IncidentOrchestratorService(
+              new ScenarioCatalog(), repo, stream, webhookExecutor, props, vthreads);
+
+      UUID firstRunId = orchestrator.triggerWebhookRun(event);
+      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(orchestrator.getRun(firstRunId).source()).isEqualTo(IncidentSource.WEBHOOK);
+
+      orchestrator.triggerWebhookRun(event);
+      assertThatThrownBy(() -> orchestrator.triggerWebhookRun(event))
+          .isInstanceOf(QueueCapacityExceededException.class);
+
+      release.countDown();
+      assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  private static LiveIncidentExecutor liveOnly(BiConsumer<UUID, ScenarioDefinition> handler) {
+    return new LiveIncidentExecutor() {
+      @Override
+      public void executeLiveRun(UUID runId, ScenarioDefinition scenario) {
+        handler.accept(runId, scenario);
+      }
+
+      @Override
+      public void executeWebhookRun(UUID runId, WebhookFailureEvent event) {}
+    };
   }
 
   private static final class InMemoryIncidentRepository implements IncidentRepository {

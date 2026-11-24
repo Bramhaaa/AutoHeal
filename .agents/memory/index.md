@@ -46,3 +46,7 @@ Start searches here before scanning the repo.
   - Named SSE hook: `frontend/src/hooks/useIncidentStream.ts`
   - UI components & pages: `frontend/src/components/{TopNav,ScenarioSelector,PipelineVisualizer,LiveTerminal,PatchDiffViewer,RunSummaryBar,PlaygroundWorkbench,BenchmarksView}.tsx`, `frontend/src/app/{layout,page}.tsx`, `frontend/src/app/benchmarks/page.tsx`
   - Playwright smoke tests: `frontend/tests/playground.spec.ts`
+- **GitHub `workflow_run` Webhook & Actions Log Zip (`PRD §4.1`):**
+  - Port & models: `backend/src/main/java/com/autoheal/domain/{GitHubActionsLogClient,WebhookFailureEvent,WebhookProcessingResult,WebhookSignatureException}.java`
+  - Services & adapter: `backend/src/main/java/com/autoheal/service/{WebhookProperties,WebhookSignatureVerifier,GitHubWebhookService}.java`, `backend/src/main/java/com/autoheal/infra/github/GitHubRestActionsLogClient.java`
+  - Controller: `backend/src/main/java/com/autoheal/api/{GitHubWebhookController,WebhookResponse}.java`

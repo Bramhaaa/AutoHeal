@@ -2,6 +2,7 @@ package com.autoheal.service;
 
 import com.autoheal.domain.AttemptRecord;
 import com.autoheal.domain.DistilledLog;
+import com.autoheal.domain.GitHubActionsLogClient;
 import com.autoheal.domain.HealingContext;
 import com.autoheal.domain.HealingResult;
 import com.autoheal.domain.IncidentAttempt;
@@ -17,6 +18,7 @@ import com.autoheal.domain.SandboxResult;
 import com.autoheal.domain.SandboxRunner;
 import com.autoheal.domain.ScenarioDefinition;
 import com.autoheal.domain.TestSuiteReport;
+import com.autoheal.domain.WebhookFailureEvent;
 import com.autoheal.domain.WorkspaceHandle;
 import com.autoheal.domain.WorkspaceManager;
 import java.math.BigDecimal;
@@ -24,6 +26,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,7 +40,9 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
   private final IncidentRepository incidentRepository;
   private final IncidentEventStreamService eventStreamService;
   private final PipelineProperties properties;
+  private final GitHubActionsLogClient actionsLogClient;
 
+  @Autowired
   public DefaultLiveIncidentExecutor(
       WorkspaceManager workspaceManager,
       SandboxRunner sandboxRunner,
@@ -46,7 +51,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
       AgenticHealingService healingService,
       IncidentRepository incidentRepository,
       IncidentEventStreamService eventStreamService,
-      PipelineProperties properties) {
+      PipelineProperties properties,
+      GitHubActionsLogClient actionsLogClient) {
     this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
     this.sandboxRunner = Objects.requireNonNull(sandboxRunner, "sandboxRunner");
     this.surefireParser = Objects.requireNonNull(surefireParser, "surefireParser");
@@ -55,6 +61,30 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
     this.incidentRepository = Objects.requireNonNull(incidentRepository, "incidentRepository");
     this.eventStreamService = Objects.requireNonNull(eventStreamService, "eventStreamService");
     this.properties = Objects.requireNonNull(properties, "properties");
+    this.actionsLogClient = Objects.requireNonNull(actionsLogClient, "actionsLogClient");
+  }
+
+  DefaultLiveIncidentExecutor(
+      WorkspaceManager workspaceManager,
+      SandboxRunner sandboxRunner,
+      SurefireReportParser surefireParser,
+      LogDistiller logDistiller,
+      AgenticHealingService healingService,
+      IncidentRepository incidentRepository,
+      IncidentEventStreamService eventStreamService,
+      PipelineProperties properties) {
+    this(
+        workspaceManager,
+        sandboxRunner,
+        surefireParser,
+        logDistiller,
+        healingService,
+        incidentRepository,
+        eventStreamService,
+        properties,
+        (owner, repo, workflowRunId) -> {
+          throw new IllegalStateException("GitHubActionsLogClient is not configured");
+        });
   }
 
   @Override
@@ -66,16 +96,45 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
           "autoheal.pipeline.demo-repo-uri (DEMO_REPO_URI) must be configured for LIVE runs");
     }
 
+    runPipeline(
+        runId,
+        properties.demoRepoUri(),
+        scenario.branch(),
+        Map.of("scenarioId", scenario.id(), "branch", scenario.branch()),
+        null);
+  }
+
+  @Override
+  public void executeWebhookRun(UUID runId, WebhookFailureEvent event) {
+    Objects.requireNonNull(runId, "runId must not be null");
+    Objects.requireNonNull(event, "event must not be null");
+
+    String downloadedLogs =
+        actionsLogClient.downloadWorkflowRunLogs(
+            event.owner(), event.repo(), event.workflowRunId());
+    runPipeline(
+        runId,
+        event.cloneUrl(),
+        event.headBranch(),
+        Map.of(
+            "repo", event.fullRepoName(),
+            "branch", event.headBranch(),
+            "workflowRunId", event.workflowRunId()),
+        downloadedLogs);
+  }
+
+  private void runPipeline(
+      UUID runId,
+      String repoUri,
+      String branch,
+      Map<String, Object> receivedPayload,
+      String preDownloadedLogs) {
     long startedMs = System.currentTimeMillis();
     incidentRepository.updateRunStatus(runId, IncidentStatus.PREPARING);
     eventStreamService.publish(
-        runId,
-        IncidentStage.INCIDENT_RECEIVED,
-        IncidentEventType.STAGE_UPDATE,
-        Map.of("scenarioId", scenario.id(), "branch", scenario.branch()));
+        runId, IncidentStage.INCIDENT_RECEIVED, IncidentEventType.STAGE_UPDATE, receivedPayload);
 
-    try (WorkspaceHandle workspace =
-        workspaceManager.cloneBranch(properties.demoRepoUri(), scenario.branch())) {
+    try (WorkspaceHandle workspace = workspaceManager.cloneBranch(repoUri, branch)) {
 
       SandboxResult baselineSandbox =
           sandboxRunner.runTests(
@@ -88,7 +147,10 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
                       Map.of("message", line, "phase", "baseline")));
 
       TestSuiteReport baselineReport = surefireParser.parse(workspace.directory());
-      String rawLog = String.join("\n", baselineSandbox.outputLines());
+      String rawLog =
+          (preDownloadedLogs != null && !preDownloadedLogs.isBlank())
+              ? preDownloadedLogs
+              : String.join("\n", baselineSandbox.outputLines());
 
       incidentRepository.updateRunStatus(runId, IncidentStatus.DISTILLING);
       DistilledLog distilled = logDistiller.distill(rawLog);

@@ -6,6 +6,7 @@ import com.autoheal.domain.QueueCapacityExceededException;
 import com.autoheal.domain.RateLimitExceededException;
 import com.autoheal.domain.ReplayNotAvailableException;
 import com.autoheal.domain.ScenarioNotFoundException;
+import com.autoheal.domain.WebhookSignatureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -36,6 +37,12 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiErrorResponse> handleQueueFull(QueueCapacityExceededException ex) {
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .body(ApiErrorResponse.suggestReplay("QUEUE_FULL", ex.getMessage()));
+  }
+
+  @ExceptionHandler(WebhookSignatureException.class)
+  public ResponseEntity<ApiErrorResponse> handleWebhookSignature(WebhookSignatureException ex) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .body(ApiErrorResponse.of("INVALID_WEBHOOK_SIGNATURE", ex.getMessage()));
   }
 
   @ExceptionHandler(IllegalArgumentException.class)

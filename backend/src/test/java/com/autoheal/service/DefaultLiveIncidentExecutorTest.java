@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.autoheal.domain.AttemptOutcome;
 import com.autoheal.domain.AttemptRecord;
+import com.autoheal.domain.GitHubActionsLogClient;
 import com.autoheal.domain.HealingResult;
 import com.autoheal.domain.IncidentAttempt;
 import com.autoheal.domain.IncidentEvent;
@@ -25,6 +26,7 @@ import com.autoheal.domain.SandboxRunner;
 import com.autoheal.domain.ScenarioDefinition;
 import com.autoheal.domain.TestCaseId;
 import com.autoheal.domain.TestSuiteReport;
+import com.autoheal.domain.WebhookFailureEvent;
 import com.autoheal.domain.WorkspaceHandle;
 import com.autoheal.domain.WorkspaceManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -104,6 +106,67 @@ class DefaultLiveIncidentExecutorTest {
     assertThat(repo.savedLlmCalls).hasSize(1);
     assertThat(repo.events).anyMatch(e -> e.eventType() == IncidentEventType.COMPLETED);
     verify(workspaceManager).cloneBranch(props.demoRepoUri(), scenario.branch());
+  }
+
+  @Test
+  void executesWebhookRunUsingDownloadedActionsLogs(@TempDir Path tempDir) {
+    WorkspaceManager workspaceManager = mock(WorkspaceManager.class);
+    SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+    SurefireReportParser surefireParser = mock(SurefireReportParser.class);
+    AgenticHealingService healingService = mock(AgenticHealingService.class);
+    GitHubActionsLogClient actionsLogClient = mock(GitHubActionsLogClient.class);
+    RecordingRepository repo = new RecordingRepository();
+    IncidentEventStreamService stream = new IncidentEventStreamService(repo, new ObjectMapper());
+    PipelineProperties props = new PipelineProperties(3, 10, 0L, "", "owner/demo", false);
+
+    WebhookFailureEvent event =
+        new WebhookFailureEvent(
+            "delivery-99",
+            "acme",
+            "demo",
+            "https://github.com/acme/demo.git",
+            "fix/bug",
+            "abc999",
+            777L);
+    when(actionsLogClient.downloadWorkflowRunLogs("acme", "demo", 777L))
+        .thenReturn("[ERROR] NullPointerException at PaymentService.java:24");
+    when(workspaceManager.cloneBranch(event.cloneUrl(), event.headBranch()))
+        .thenReturn(new WorkspaceHandle(tempDir, "abc999", () -> {}));
+    when(workspaceManager.readRecentDiffs(tempDir, 3)).thenReturn("");
+    when(sandboxRunner.runTests(any(), any()))
+        .thenReturn(new SandboxResult(1, false, 900L, List.of("baseline")));
+    when(surefireParser.parse(tempDir))
+        .thenReturn(
+            new TestSuiteReport(
+                3, 1, 0, 0, Set.of(), Set.of(new TestCaseId("PaymentServiceTest", "testNull"))));
+    AttemptRecord verified =
+        new AttemptRecord(1, AttemptOutcome.VERIFIED, "--- diff ---", 0, 3, 0, 5000L, "Verified");
+    when(healingService.heal(any(), any()))
+        .thenReturn(
+            HealingResult.succeeded("Fixed NPE", "--- diff ---", List.of(verified), List.of()));
+
+    DefaultLiveIncidentExecutor executor =
+        new DefaultLiveIncidentExecutor(
+            workspaceManager,
+            sandboxRunner,
+            surefireParser,
+            new LogDistiller(),
+            healingService,
+            repo,
+            stream,
+            props,
+            actionsLogClient);
+
+    UUID runId = UUID.randomUUID();
+    repo.createRun(
+        IncidentRun.queued(
+            runId, IncidentSource.WEBHOOK, null, "acme/demo", "abc999", true, Instant.now()));
+
+    executor.executeWebhookRun(runId, event);
+
+    assertThat(repo.completedStatus).isEqualTo(IncidentStatus.SUCCEEDED);
+    verify(actionsLogClient).downloadWorkflowRunLogs("acme", "demo", 777L);
+    verify(workspaceManager).cloneBranch(event.cloneUrl(), event.headBranch());
   }
 
   @Test

@@ -14,6 +14,7 @@ import com.autoheal.domain.QueueCapacityExceededException;
 import com.autoheal.domain.ReplayNotAvailableException;
 import com.autoheal.domain.RunMode;
 import com.autoheal.domain.ScenarioDefinition;
+import com.autoheal.domain.WebhookFailureEvent;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -107,6 +108,39 @@ public class IncidentOrchestratorService {
     return startLive(scenario);
   }
 
+  public UUID triggerWebhookRun(WebhookFailureEvent event) {
+    Objects.requireNonNull(event, "event must not be null");
+    int position = queuedCount.incrementAndGet();
+    if (position > properties.maxQueuedRuns()) {
+      queuedCount.decrementAndGet();
+      throw new QueueCapacityExceededException(properties.maxQueuedRuns());
+    }
+
+    UUID runId = UUID.randomUUID();
+    incidentRepository.createRun(
+        IncidentRun.queued(
+            runId,
+            IncidentSource.WEBHOOK,
+            null,
+            event.fullRepoName(),
+            event.headSha(),
+            true,
+            Instant.now()));
+    eventStreamService.publish(
+        runId,
+        IncidentStage.QUEUED,
+        IncidentEventType.STAGE_UPDATE,
+        Map.of(
+            "repo", event.fullRepoName(),
+            "branch", event.headBranch(),
+            "workflowRunId", event.workflowRunId(),
+            "queuePosition", position,
+            "mode", "WEBHOOK"));
+
+    executorService.execute(() -> runWebhookWithSemaphore(runId, event));
+    return runId;
+  }
+
   public IncidentRun getRun(UUID runId) {
     Objects.requireNonNull(runId, "runId must not be null");
     return incidentRepository
@@ -158,12 +192,20 @@ public class IncidentOrchestratorService {
   }
 
   private void runWithSemaphore(UUID runId, ScenarioDefinition scenario) {
+    executeWithSemaphore(runId, () -> liveIncidentExecutor.executeLiveRun(runId, scenario));
+  }
+
+  private void runWebhookWithSemaphore(UUID runId, WebhookFailureEvent event) {
+    executeWithSemaphore(runId, () -> liveIncidentExecutor.executeWebhookRun(runId, event));
+  }
+
+  private void executeWithSemaphore(UUID runId, Runnable work) {
     boolean acquired = false;
     try {
       concurrencySemaphore.acquire();
       acquired = true;
       queuedCount.decrementAndGet();
-      liveIncidentExecutor.executeLiveRun(runId, scenario);
+      work.run();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       if (!acquired) {

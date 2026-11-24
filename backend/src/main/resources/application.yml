@@ -23,6 +23,9 @@ autoheal:
   github:
     token: ${GITHUB_TOKEN:}
     api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+  webhook:
+    secret: ${GITHUB_WEBHOOK_SECRET:}
+    max-delivery-cache-size: ${AUTOHEAL_WEBHOOK_DELIVERY_CACHE_SIZE:1000}
   pipeline:
     max-concurrent-runs: ${AUTOHEAL_MAX_CONCURRENT_RUNS:3}
     max-queued-runs: ${AUTOHEAL_MAX_QUEUED_RUNS:10}

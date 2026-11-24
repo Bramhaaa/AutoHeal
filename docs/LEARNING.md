@@ -490,3 +490,41 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [MDN — Using Server-Sent Events (`EventSource`)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
 - [Next.js — Lazy Loading & `next/dynamic`](https://nextjs.org/docs/app/guides/lazy-loading)
 - [Playwright — Network Mocking (`page.route`)](https://playwright.dev/docs/mock)
+
+
+---
+
+## Slice 16: GitHub `workflow_run` Webhook, Constant-Time HMAC & Actions Log Zip (`PRD §4.1`)
+
+### What was built
+- **Domain Models & Port (`com.autoheal.domain`)**:
+  - `GitHubActionsLogClient` port for downloading workflow run logs; `WebhookFailureEvent`, `WebhookProcessingResult`, and `WebhookSignatureException`.
+- **Constant-Time HMAC-SHA256 Verifier (`WebhookSignatureVerifier` in `com.autoheal.service`)**:
+  - Computes `HmacSHA256` over the raw request `byte[]` body and compares digests with `MessageDigest.isEqual(...)` (constant-time byte comparison).
+  - Fails closed when `GITHUB_WEBHOOK_SECRET` is blank; rejects missing header, wrong prefix, invalid hex, wrong digest length, or mismatched MAC.
+- **Bounded Actions Log Zip Adapter (`GitHubRestActionsLogClient` in `com.autoheal.infra.github`)**:
+  - Downloads `GET /repos/{owner}/{repo}/actions/runs/{workflowRunId}/logs` via `RestClient` and streams `ZipInputStream` with a hard 512 KB extracted-bytes cap to defend against zip bombs.
+- **Webhook Filtering, De-duplication & Pipeline Hook (`GitHubWebhookService`, `IncidentOrchestratorService.triggerWebhookRun`, `DefaultLiveIncidentExecutor.executeWebhookRun`)**:
+  - Ignores non-`workflow_run` events and runs where `action != "completed"` or `conclusion != "failure"` (`200 OK`).
+  - Deduplicates `X-GitHub-Delivery` using a synchronized bounded LRU `LinkedHashMap` (`200 OK` on duplicates).
+  - Queues real failures through the same fair `Semaphore(3)` bulkhead (`IncidentSource.WEBHOOK`), downloads Actions logs, and feeds them into `LogDistiller` → `AgenticHealingService`.
+- **Controller & Error Mapping (`GitHubWebhookController`, `WebhookResponse`, `GlobalExceptionHandler`)**:
+  - `POST /api/v1/webhooks/github` accepts raw `byte[]` body, returns `202 Accepted` when queued, `200 OK` when ignored/duplicate, and `401 Unauthorized` (`INVALID_WEBHOOK_SIGNATURE`) on bad/missing signatures.
+
+### Key Concepts Used
+- **Constant-Time Comparison (`MessageDigest.isEqual`)**: Standard `Arrays.equals` or `String.equals` short-circuits on the first mismatched byte, leaking timing information that lets an attacker forge HMAC signatures byte-by-byte over repeated requests. `MessageDigest.isEqual` always compares every byte in fixed time.
+- **Verifying HMAC on Raw `byte[]` (Not Parsed JSON)**: GitHub signs the exact HTTP request body bytes. If a controller deserializes to a DTO or `JsonNode` and re-serializes it, whitespace or key ordering changes and valid signatures fail.
+- **Bounded Zip Extraction (Zip-Bomb Defense)**: A tiny compressed ZIP payload can expand to gigabytes in memory. Tracking `totalWritten` and capping at `MAX_EXTRACTED_BYTES` (512 KB) bounds heap usage before passing text to `LogDistiller`.
+
+### Likely Interview Questions
+1. **Why must you verify `X-Hub-Signature-256` against the raw `byte[]` body using `MessageDigest.isEqual`?**
+   - *Answer:* Two reasons: (1) JSON parsing/re-serialization alters whitespace/key order and breaks the signature, and (2) `String.equals` exits early on the first differing byte, creating a timing side-channel. `MessageDigest.isEqual` compares all 32 bytes in constant time.
+2. **Why return `200 OK` for ignored events and duplicate deliveries instead of `400` or `409`?**
+   - *Answer:* GitHub treats non-2xx webhook responses as delivery failures and retries them with backoff. Returning `200 OK` for intentionally ignored events (e.g., `conclusion=success`) and already-processed `X-GitHub-Delivery` IDs prevents retry storms while keeping the endpoint idempotent.
+3. **Why does the webhook flow still run a baseline `mvn test` inside the sandbox if it already downloaded the Actions log zip?**
+   - *Answer:* The Actions log gives rich failure context for `LogDistiller`, while the baseline sandbox run generates fresh `target/surefire-reports/*.xml` files locally so `SurefireReportParser` has the exact oracle test list and baseline test count required by the Test Integrity Policy (`FR-3.4`).
+
+### Official Docs
+- [GitHub Docs — Validating Webhook Deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)
+- [GitHub REST API — Download Workflow Run Logs](https://docs.github.com/en/rest/actions/workflow-runs#download-workflow-run-logs)
+- [Java `MessageDigest.isEqual`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/security/MessageDigest.html#isEqual(byte%5B%5D,byte%5B%5D))
