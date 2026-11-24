@@ -13,3 +13,6 @@ autoheal:
       model: ${GEMINI_MODEL:gemini-2.5-flash}
       prompt-price-per-million: ${GEMINI_PROMPT_PRICE_PER_MILLION:0.15}
       completion-price-per-million: ${GEMINI_COMPLETION_PRICE_PER_MILLION:0.60}
+  github:
+    token: ${GITHUB_TOKEN:}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}

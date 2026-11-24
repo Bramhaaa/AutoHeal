@@ -258,3 +258,32 @@ This file grows after every slice. By the end of the project, it doubles as your
 - [Spring Framework — `RestClient`](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html#rest-restclient)
 - [Spring Boot — `@ConfigurationProperties`](https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties)
 - [Gemini API — Function Calling](https://ai.google.dev/gemini-api/docs/function-calling)
+
+---
+
+## Slice 9: GitHub Draft PR Client & PR Body Formatter (`FR-5.1`, `FR-5.2` — End of Week 2)
+
+### What was built
+- **Hexagonal `GitHubPrClient` Port (`com.autoheal.domain`)**:
+  - `GitHubPrClient.createDraftPullRequest(PullRequestRequest)` returning `PullRequestResult(number, htmlUrl, branchName)` with typed `GitHubException`.
+- **GitHub Git Data API Adapter (`GitHubRestPrClient` & `GitHubProperties` in `com.autoheal.infra.github`)**:
+  - Authenticates via fine-grained PAT in `Authorization: Bearer` header from `${GITHUB_TOKEN:}` (`autoheal.github.*` in `application.yml`).
+  - Executes the 6-step Git Data API flow over HTTPS (no `git push` shell-out): `GET /git/commits/{sha}` → `POST /git/blobs` → `POST /git/trees` → `POST /git/commits` → `POST /git/refs` → `POST /pulls` with `"draft": true`.
+  - Verified end-to-end against an in-process JDK `HttpServer` (`GitHubRestPrClientTest`).
+- **PR Body Formatter (`PullRequestBodyFormatter` in `com.autoheal.service`)**:
+  - Generates the structured `FR-5.2` Markdown body: Root Cause Analysis, Summary of Changes, Verification Evidence (exit code, oracle `Class#method`, executed test count before → after, sandbox duration), and Agent Metrics (attempts, LLM calls, latency, tokens, USD cost).
+
+### Key Concepts Used
+- **GitHub Git Data API (Blobs → Tree → Commit → Ref)**: Git stores content as immutable objects (blobs for files, trees for directories, commits pointing to trees + parents, refs for branches). Using the Git Data API lets a stateless backend create multi-file commits and branches purely over REST without configuring SSH keys or shelling out to `git push`.
+- **Draft Pull Requests (`draft: true`)**: Enforces AutoHeal's non-goal of never auto-merging AI patches without human review—Draft PRs clearly signal an automated candidate fix with verifiable test evidence.
+- **Fine-Grained PAT + Header Auth**: Scoped only to the demo repository (`contents: write`, `pull_requests: write`) and loaded from env vars (`GITHUB_TOKEN`), never hardcoded or passed into sandbox containers.
+
+### Likely Interview Questions
+1. **Why use the GitHub Git Data API (`blobs` → `trees` → `commits` → `refs`) instead of `git push` or the Contents API?**
+   - *Answer:* Shelling out to `git push` requires managing local Git credentials/SSH keys and creates command-injection surface. The Contents API only updates one file per commit, whereas the Git Data API creates a single atomic multi-file commit (source fix + new regression test) cleanly over HTTPS.
+2. **Why open a Draft PR instead of a regular PR or auto-merging?**
+   - *Answer:* Even with a green sandbox build and Test Integrity Policy, an AI patch can still overfit to the test suite or miss subtle domain invariants. Opening a Draft PR with full root-cause analysis and verification evidence keeps a human engineer in the approval loop.
+
+### Official Docs
+- [GitHub REST API — Git Database (Blobs, Trees, Commits, Refs)](https://docs.github.com/en/rest/git)
+- [GitHub REST API — Pull Requests (`draft`)](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request)
