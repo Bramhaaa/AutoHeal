@@ -1,10 +1,10 @@
 # Current Working Memory
 
 - **Current Phase:** End of Week 1 → Starting Week 2 (Agentic Core)
-- **Current Branch:** `main` (pushed to `origin/main` @ `4615577`)
+- **Current Branch:** `main` (pushed to `origin/main` @ `f5a92a7`)
 - **Completed Work:**
   - PRD reviewed and revised to v1.1 (`PRD.md`; original kept at `PRD.v1.0.md`).
-  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..004), and quality skills installed.
+  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..004), quality skills, and multi-session memory/workflows (`f5a92a7`) installed.
   - Slice 1 (`f5b06c2`): Backend skeleton + Error Prone, Spotless, JaCoCo, ArchUnit gates.
   - Slice 2 (`219d01b`): `demo-service` with 4 deterministic bug scenarios (20/20 race verified).
   - Slice 3 (`d640e20`): `autoheal-maven-runner:java21` image (`8.7s` offline `--read-only` spike) + hardened `DockerSandboxRunner`.
