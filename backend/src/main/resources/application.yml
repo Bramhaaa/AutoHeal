@@ -30,3 +30,9 @@ autoheal:
     demo-repo-uri: ${DEMO_REPO_URI:}
     demo-repo-name: ${DEMO_REPO_NAME:autoheal-demo-service}
     pr-creation-enabled: ${AUTOHEAL_PR_CREATION_ENABLED:false}
+  abuse:
+    max-live-runs-per-ip-per-hour: ${AUTOHEAL_RATE_LIMIT_PER_HOUR:3}
+    daily-budget-usd: ${AUTOHEAL_DAILY_BUDGET_USD:2.00}
+    trust-forwarded-for: ${AUTOHEAL_TRUST_FORWARDED_FOR:false}
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:3000}

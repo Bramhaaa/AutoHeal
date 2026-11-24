@@ -388,3 +388,41 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [JEP 444 — Virtual Threads](https://openjdk.org/jeps/444)
 - [Java `Semaphore` & `CountDownLatch`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/Semaphore.html)
+
+
+---
+
+## Slice 13: Bucket4j Rate Limiting, Daily Spend Breaker & REST/SSE API (`PRD §4.1`, `§4.2`, `§6.2`)
+
+### What was built
+- **Abuse & Cost Protection (`AbuseProtectionService` & `AbuseProtectionProperties` in `com.autoheal.service`)**:
+  - Added `com.bucket4j:bucket4j-core:8.10.1` for in-memory per-IP token buckets (`3 live runs/hour` default, `ConcurrentHashMap<String, Bucket>`).
+  - Enforces a global daily LLM spend circuit breaker by summing `llm_calls.cost_usd` for the current UTC day via `IncidentRepository.sumDailyLlmCostUsd` against `autoheal.abuse.daily-budget-usd` (`$2.00` default). Checks the global budget *before* consuming an IP token so users aren't penalized when the breaker is tripped.
+  - `REPLAY` mode bypasses both guards so visitors can always watch a recorded run with zero LLM spend.
+- **REST & SSE API (`com.autoheal.api`)**:
+  - `ScenarioController`: `GET /api/v1/scenarios` → list of all 4 scenarios with live `replayAvailable` flags.
+  - `IncidentController`:
+    - `POST /api/v1/incidents/simulate` → `202 Accepted` with `runId`, `status: QUEUED`, and `streamUrl`.
+    - `GET /api/v1/incidents/{runId}` → full `IncidentRunResponse` including `attempts`.
+    - `GET /api/v1/incidents/{runId}/stream` (`text/event-stream`) → Spring `SseEmitter` honoring `Last-Event-ID`, sending structured `SseEventEnvelope` JSON, scheduling `: ping` heartbeats every 15s, and tearing down subscriptions cleanly on `COMPLETED`/`FAILED`/disconnect.
+  - `GlobalExceptionHandler` (`@RestControllerAdvice`): maps `ScenarioNotFoundException`/`IncidentRunNotFoundException` → `404`, `ReplayNotAvailableException` → `409`, `RateLimitExceededException`/`DailyBudgetExceededException` → `429` (`suggestedMode: REPLAY`), `QueueCapacityExceededException` → `503` (`suggestedMode: REPLAY`), `IllegalArgumentException` → `400`.
+  - `WebCorsConfig`: restricts `/api/**` CORS to `${FRONTEND_ORIGIN:http://localhost:3000}`.
+
+### Key Concepts Used
+- **Token Bucket Algorithm (Bucket4j)**: Unlike a fixed-window counter (which allows 2x bursts across window boundaries), a token bucket (`capacity = 3`, `refillGreedy(3, 1h)`) smoothly refills tokens over time while bounding burst traffic per client IP.
+- **Trusted Proxy Hygiene (`trust-forwarded-for`)**: Only reading `X-Forwarded-For` when explicitly configured behind Nginx prevents clients from spoofing arbitrary IPs to bypass per-IP rate limiting when the backend is exposed directly.
+- **Spring `SseEmitter` + Heartbeats**: Reverse proxies (Nginx, cloud load balancers) drop idle HTTP connections after ~60s. Sending an SSE comment (`: ping`) every 15s keeps the stream alive without triggering client `onmessage` handlers.
+- **Global `@RestControllerAdvice`**: Centralizes exception-to-HTTP-status mapping so controllers stay thin and never contain `try/catch` boilerplate.
+
+### Likely Interview Questions
+1. **Why check the global daily budget circuit breaker *before* consuming a token from the user's Bucket4j IP bucket?**
+   - *Answer:* If the global daily budget is already exhausted, the request will be rejected with `429` regardless. Checking budget first avoids unfairly burning the user's hourly IP quota during a global circuit-breaker state.
+2. **Why shouldn't a backend unconditionally trust the `X-Forwarded-For` header for rate limiting?**
+   - *Answer:* Any client can send a forged `X-Forwarded-For: 1.2.3.4` header on every request to bypass per-IP limits. We gate `X-Forwarded-For` parsing behind `autoheal.abuse.trust-forwarded-for` (enabled only when Nginx overwrites the header in production).
+3. **Why send `: ping` comments on an SSE stream instead of regular JSON events?**
+   - *Answer:* Lines starting with `:` are SSE protocol comments—proxies see active bytes and reset idle timeouts, while the browser's `EventSource` ignores them without polluting the UI event log or advancing `Last-Event-ID`.
+
+### Official Docs
+- [Bucket4j Documentation](https://bucket4j.com/)
+- [Spring MVC — `SseEmitter`](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-http-streaming)
+- [Spring MVC — `@RestControllerAdvice`](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-advice.html)

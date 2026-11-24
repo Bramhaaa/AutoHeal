@@ -28,6 +28,7 @@
         <docker-java.version>3.4.2</docker-java.version>
         <jgit.version>6.10.0.202406032230-r</jgit.version>
         <java-diff-utils.version>4.12</java-diff-utils.version>
+        <bucket4j.version>8.10.1</bucket4j.version>
     </properties>
 
     <dependencies>
@@ -71,6 +72,11 @@
             <groupId>io.github.java-diff-utils</groupId>
             <artifactId>java-diff-utils</artifactId>
             <version>${java-diff-utils.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>${bucket4j.version}</version>
         </dependency>
 
         <dependency>
