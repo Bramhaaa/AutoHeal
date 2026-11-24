@@ -1,18 +1,25 @@
 # Current Working Memory
 
-- **Current Phase:** End of Week 1 → Starting Week 2 (Agentic Core)
-- **Current Branch:** `main` (pushed to `origin/main` @ `f5a92a7`)
+- **Current Phase:** End of Week 2 → Starting Week 3 (Spring Boot API, PostgreSQL/Flyway, SSE & MVP Deploy)
+- **Current Branch:** `main` (pushed to `origin/main` @ `510f935`)
 - **Completed Work:**
-  - PRD reviewed and revised to v1.1 (`PRD.md`; original kept at `PRD.v1.0.md`).
-  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..004), quality skills, and multi-session memory/workflows (`f5a92a7`) installed.
-  - Slice 1 (`f5b06c2`): Backend skeleton + Error Prone, Spotless, JaCoCo, ArchUnit gates.
-  - Slice 2 (`219d01b`): `demo-service` with 4 deterministic bug scenarios (20/20 race verified).
-  - Slice 3 (`d640e20`): `autoheal-maven-runner:java21` image (`8.7s` offline `--read-only` spike) + hardened `DockerSandboxRunner`.
-  - Slice 4 (`4615577`): `JGitWorkspaceManager` + XXE-safe `SurefireReportParser`.
-  - Independent verification completed: clean `mvn -B clean verify` passes (17/17 tests), all gates probed and confirmed firing.
+  - PRD v1.1 (`PRD.md`, single source of truth; superseded `PRD.v1.0.md` removed in `510f935`).
+  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..004), quality skills, and persistent memory installed.
+  - **Week 1 (Slices 1–4):**
+    - Slice 1 (`f5b06c2`): Backend skeleton + Error Prone, Spotless, JaCoCo (≥80% `service`/`domain`), ArchUnit gates.
+    - Slice 2 (`219d01b`): `demo-service` with 4 deterministic bug scenarios (20/20 race verified).
+    - Slice 3 (`d640e20`): `autoheal-maven-runner:java21` image (`8.7s` offline `--read-only` spike) + hardened `DockerSandboxRunner`.
+    - Slice 4 (`4615577`): `JGitWorkspaceManager` + XXE-safe `SurefireReportParser`.
+  - **Week 2 (Slices 5–9):**
+    - Slice 5 (`e04de62`): Path-safe `WorkspaceTools`/`WorkspacePathResolver`, `TestIntegrityPolicy`, `PatchApplier` (`java-diff-utils:4.12`).
+    - Slice 6 (`43a1331`): `LogDistiller` (`FR-2.1`, ≥75% noise reduction, 500 KB cap).
+    - Slice 7 (`6086a6a`): `LlmClient` port, Java 21 sealed `LlmToolCall`, bounded `AgenticHealingService` (max 3 attempts, max 15 tool calls/attempt, `BigDecimal` cost accounting).
+    - Slice 8 (`477a002`): `GeminiLlmClient` (`RestClient`, `x-goog-api-key` header, `mode=ANY`, `spring-boot-starter-web`) + `DockerSandboxConfig` Spring wiring.
+    - Slice 9 (`ce4f93d`): `GitHubRestPrClient` (6-step Git Data API → Draft PR) + `PullRequestBodyFormatter` (`FR-5.1`, `FR-5.2`).
+  - Verification: `mvn -B -f backend/pom.xml clean verify` green (`57/57` tests, Error Prone clean, Spotless `64/64`, ArchUnit `4/4`, JaCoCo ≥80% met).
 - **Next Recommended Task:**
-  - **Week 2, Slice 5 (`FR-3.1`, `FR-3.4`, `ADR-001`):** Test Integrity Policy, Search/Replace Patch Applier + server-side diff (`java-diff-utils`), and path-traversal-safe local workspace tools (`list_files`, `read_file`, `search_code`).
+  - **Week 3, Slice 10 (`PRD §5`):** PostgreSQL 16 + `pgvector` `docker-compose.yml` for local dev + Flyway migrations (`incident_runs`, `incident_attempts`, `llm_calls`, `incident_events`, `incident_memory`, `benchmark_reports`) + persistence adapters tested via Testcontainers.
 - **Known Minor Gaps (non-blocking):**
-  - `DockerSandboxRunner.sweepExpiredContainers(Duration)` has no dedicated test yet (DockerSandboxRunner at 73% line coverage).
+  - `DockerSandboxRunner.sweepExpiredContainers(Duration)` has no dedicated test yet.
   - On Linux VMs (Week 3 deploy), ensure backend runs as UID `1000` or sets POSIX permissions so container UID `1000` can write `target/` in bind-mounted `/workspace`.
-- **Blockers:** None (ensure Docker Desktop is running when executing `DockerSandboxRunnerTest`).
+- **Blockers:** None (ensure Docker Desktop is running when executing `DockerSandboxRunnerTest` and Testcontainers tests).
