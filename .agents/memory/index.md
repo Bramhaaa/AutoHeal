@@ -54,3 +54,15 @@ Start searches here before scanning the repo.
   - Ports & models: `backend/src/main/java/com/autoheal/domain/{EmbeddingClient,IncidentMemoryRepository,IncidentMemoryEntry,IncidentMemorySource}.java`
   - Adapters: `backend/src/main/java/com/autoheal/infra/persistence/JdbcIncidentMemoryRepository.java`, `backend/src/main/java/com/autoheal/infra/llm/GeminiEmbeddingClient.java`
   - Seed & service: `backend/src/main/java/com/autoheal/service/{IncidentMemorySeedCatalog,IncidentMemoryService}.java`
+- **Draft PR Pipeline Wiring (`FR-5.1`, `FR-5.2`):**
+  - `backend/src/main/java/com/autoheal/service/DraftPullRequestService.java` (wired into `DefaultLiveIncidentExecutor`, patched file contents carried via `AppliedPatch` & `HealingResult`).
+- **Benchmarks Summary API (`FR-1.5`):**
+  - Models & port: `backend/src/main/java/com/autoheal/domain/{BenchmarkReport,BenchmarkSummary,BenchmarkAblationRow,BenchmarkFailureBucket,BenchmarkReportRepository,BenchmarkReportNotFoundException}.java`
+  - Adapter, service & API: `backend/src/main/java/com/autoheal/infra/persistence/JdbcBenchmarkReportRepository.java`, `backend/src/main/java/com/autoheal/service/BenchmarkReportService.java`, `backend/src/main/java/com/autoheal/api/BenchmarkController.java`
+- **Daily Demo Repo Hygiene (`FR-5.3`):**
+  - Port & models: `backend/src/main/java/com/autoheal/domain/{GitHubRepoHygieneClient,OpenPullRequest,GitBranchInfo}.java`
+  - Adapter & service: `backend/src/main/java/com/autoheal/infra/github/GitHubRestRepoHygieneClient.java`, `backend/src/main/java/com/autoheal/service/DemoRepoHygieneService.java`
+- **Evaluation Harness & CLI (`PRD §7`):**
+  - Models: `backend/src/main/java/com/autoheal/domain/{EvalBugCase,EvalConfig,EvalCaseOutcome,EvalSuiteResult}.java`
+  - Services & CLI: `backend/src/main/java/com/autoheal/service/{EvalHarnessService,EvalReportFormatter}.java`, `backend/src/main/java/com/autoheal/api/AutoHealEvalRunner.java`, `eval-corpus/bugs.example.json`
+- **Root Documentation:** `README.md` (architecture, security invariants, quickstart, webhook setup, eval CLI, production deploy).
