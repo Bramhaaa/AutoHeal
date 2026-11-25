@@ -596,3 +596,33 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [GitHub REST API — Git Data (Blobs, Trees, Commits, Refs)](https://docs.github.com/en/rest/git)
 - [Java 21 `Map.copyOf` & Unmodifiable Collections](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/Map.html#copyOf(java.util.Map))
+
+
+---
+
+## Slice 19: Benchmarks Summary API & PostgreSQL JSONB Persistence (`FR-1.5`, `PRD §4.1`, `§5`)
+
+### What was built
+- **Domain Models & Port (`com.autoheal.domain`):**
+  - Immutable records `BenchmarkReport`, `BenchmarkSummary`, `BenchmarkAblationRow`, and `BenchmarkFailureBucket` matching the frontend's TypeScript `BenchmarkSummary` contract, plus `BenchmarkReportRepository` and `BenchmarkReportNotFoundException`.
+- **PostgreSQL `JSONB` Adapter (`JdbcBenchmarkReportRepository` in `com.autoheal.infra.persistence`):**
+  - Persists reports into `benchmark_reports` using `JdbcClient` with `CAST(:config AS jsonb)`, `CAST(:results AS jsonb)`, and `INSERT ... RETURNING` to return the generated `BIGSERIAL` ID in a single round-trip.
+  - Queries the newest report via `ORDER BY created_at DESC, id DESC LIMIT 1` (verified against Testcontainers `pgvector:pg16` in `JdbcBenchmarkReportRepositoryTest`).
+- **Service & REST Controller (`BenchmarkReportService` & `BenchmarkController`):**
+  - Exposes `GET /api/v1/benchmarks/summary`, deserializing the latest report's `results` JSONB and populating `reportId` and `generatedAt` from the DB row when omitted in JSON.
+  - Wired `BenchmarkReportNotFoundException` into `GlobalExceptionHandler` (`404 NOT_FOUND`) so the Next.js Benchmarks tab cleanly renders its "No benchmark report published yet" empty state when the table is empty (`BenchmarkApiTest`).
+
+### Key Concepts Used
+- **PostgreSQL `INSERT ... RETURNING` with `JSONB`:** Returning the generated primary key and normalized `JSONB` text in the same SQL statement avoids a second `SELECT` round-trip and guarantees the caller immediately has the persisted row's ID.
+- **Defensive Compact Constructors for Record Deserialization:** Defaulting nullable `List` / `BigDecimal` fields inside `BenchmarkSummary`'s compact constructor keeps `com.autoheal.domain` 100% free of Jackson annotations while still handling partial JSON safely.
+- **REST 404 as Explicit Empty State:** Returning `404` for "no latest benchmark report yet" lets the frontend distinguish between "no data yet" (`404` → empty state) and "backend unreachable / server error" (`5xx` → error banner).
+
+### Likely Interview Questions
+1. **Why store `benchmark_reports.results` as PostgreSQL `JSONB` instead of normalizing every ablation row and failure bucket into separate relational tables?**
+   - *Answer:* Each benchmark report is an immutable evaluation snapshot read and written as a whole document. `JSONB` gives us schema flexibility as new evaluation metrics are added, validates JSON syntax at write time, and still supports indexing or SQL querying (`results->>'passAt1Rate'`) without join overhead.
+2. **Why order by `created_at DESC, id DESC` instead of just `created_at DESC`?**
+   - *Answer:* Two reports inserted within the same timestamp tick (common in fast automated tests or batch runs) would have a non-deterministic tie-breaker with `created_at DESC` alone. Adding `id DESC` (`BIGSERIAL`) guarantees deterministic ordering.
+
+### Official Docs
+- [PostgreSQL — `JSONB` Data Type](https://www.postgresql.org/docs/16/datatype-json.html)
+- [Spring Framework — `JdbcClient`](https://docs.spring.io/spring-framework/reference/data-access/jdbc/core.html#jdbc-JdbcClient)

@@ -1,5 +1,6 @@
 package com.autoheal.api;
 
+import com.autoheal.domain.BenchmarkReportNotFoundException;
 import com.autoheal.domain.DailyBudgetExceededException;
 import com.autoheal.domain.IncidentRunNotFoundException;
 import com.autoheal.domain.QueueCapacityExceededException;
@@ -15,7 +16,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-  @ExceptionHandler({ScenarioNotFoundException.class, IncidentRunNotFoundException.class})
+  @ExceptionHandler({
+    ScenarioNotFoundException.class,
+    IncidentRunNotFoundException.class,
+    BenchmarkReportNotFoundException.class
+  })
   public ResponseEntity<ApiErrorResponse> handleNotFound(RuntimeException ex) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND)
         .body(ApiErrorResponse.of("NOT_FOUND", ex.getMessage()));
