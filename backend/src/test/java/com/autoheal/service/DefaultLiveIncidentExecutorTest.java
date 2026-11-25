@@ -21,6 +21,7 @@ import com.autoheal.domain.IncidentStage;
 import com.autoheal.domain.IncidentStatus;
 import com.autoheal.domain.LlmCallRecord;
 import com.autoheal.domain.LlmUsage;
+import com.autoheal.domain.PullRequestResult;
 import com.autoheal.domain.SandboxResult;
 import com.autoheal.domain.SandboxRunner;
 import com.autoheal.domain.ScenarioDefinition;
@@ -78,6 +79,14 @@ class DefaultLiveIncidentExecutorTest {
                 List.of(usage)));
 
     IncidentMemoryService memoryService = mock(IncidentMemoryService.class);
+    DraftPullRequestService draftPrService = mock(DraftPullRequestService.class);
+    when(draftPrService.openDraftPr(any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenReturn(
+            Optional.of(
+                new PullRequestResult(
+                    42,
+                    "https://github.com/owner/demo/pull/42",
+                    "autoheal/fix-payment-npe-01-12345678")));
 
     DefaultLiveIncidentExecutor executor =
         new DefaultLiveIncidentExecutor(
@@ -90,7 +99,8 @@ class DefaultLiveIncidentExecutorTest {
             stream,
             props,
             mock(GitHubActionsLogClient.class),
-            memoryService);
+            memoryService,
+            draftPrService);
 
     UUID runId = UUID.randomUUID();
     repo.createRun(
@@ -106,9 +116,15 @@ class DefaultLiveIncidentExecutorTest {
     executor.executeLiveRun(runId, scenario);
 
     assertThat(repo.completedStatus).isEqualTo(IncidentStatus.SUCCEEDED);
+    assertThat(repo.completedPrUrl).isEqualTo("https://github.com/owner/demo/pull/42");
+    assertThat(repo.statusTransitions).contains(IncidentStatus.OPENING_PR);
     assertThat(repo.savedAttempts).hasSize(1);
     assertThat(repo.savedLlmCalls).hasSize(1);
-    assertThat(repo.events).anyMatch(e -> e.eventType() == IncidentEventType.COMPLETED);
+    assertThat(repo.events)
+        .anyMatch(
+            e ->
+                e.eventType() == IncidentEventType.COMPLETED
+                    && e.payloadJson().contains("https://github.com/owner/demo/pull/42"));
     verify(workspaceManager).cloneBranch(props.demoRepoUri(), scenario.branch());
   }
 
@@ -160,7 +176,8 @@ class DefaultLiveIncidentExecutorTest {
             stream,
             props,
             actionsLogClient,
-            mock(IncidentMemoryService.class));
+            mock(IncidentMemoryService.class),
+            mock(DraftPullRequestService.class));
 
     UUID runId = UUID.randomUUID();
     repo.createRun(
@@ -208,7 +225,8 @@ class DefaultLiveIncidentExecutorTest {
             stream,
             props,
             mock(GitHubActionsLogClient.class),
-            memoryService);
+            memoryService,
+            mock(DraftPullRequestService.class));
 
     UUID runId = UUID.randomUUID();
     executor.executeLiveRun(runId, scenario);
@@ -236,7 +254,8 @@ class DefaultLiveIncidentExecutorTest {
             new IncidentEventStreamService(new RecordingRepository(), new ObjectMapper()),
             blankRepoProps,
             mock(GitHubActionsLogClient.class),
-            mock(IncidentMemoryService.class));
+            mock(IncidentMemoryService.class),
+            mock(DraftPullRequestService.class));
 
     assertThatThrownBy(() -> executor.executeLiveRun(UUID.randomUUID(), scenario))
         .isInstanceOf(IllegalStateException.class)
@@ -247,6 +266,8 @@ class DefaultLiveIncidentExecutorTest {
 
     IncidentStatus completedStatus;
     String completedFailureReason;
+    String completedPrUrl;
+    final List<IncidentStatus> statusTransitions = new ArrayList<>();
     final List<IncidentAttempt> savedAttempts = new ArrayList<>();
     final List<LlmCallRecord> savedLlmCalls = new ArrayList<>();
     final List<IncidentEvent> events = new ArrayList<>();
@@ -267,7 +288,9 @@ class DefaultLiveIncidentExecutorTest {
     }
 
     @Override
-    public void updateRunStatus(UUID runId, IncidentStatus status) {}
+    public void updateRunStatus(UUID runId, IncidentStatus status) {
+      statusTransitions.add(status);
+    }
 
     @Override
     public void completeRun(
@@ -285,6 +308,7 @@ class DefaultLiveIncidentExecutorTest {
         Instant completedAt) {
       this.completedStatus = status;
       this.completedFailureReason = failureReason;
+      this.completedPrUrl = prUrl;
     }
 
     @Override

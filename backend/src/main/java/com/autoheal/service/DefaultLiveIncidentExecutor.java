@@ -14,6 +14,7 @@ import com.autoheal.domain.IncidentStatus;
 import com.autoheal.domain.LiveIncidentExecutor;
 import com.autoheal.domain.LlmCallRecord;
 import com.autoheal.domain.LlmUsage;
+import com.autoheal.domain.PullRequestResult;
 import com.autoheal.domain.SandboxRequest;
 import com.autoheal.domain.SandboxResult;
 import com.autoheal.domain.SandboxRunner;
@@ -24,9 +25,11 @@ import com.autoheal.domain.WorkspaceHandle;
 import com.autoheal.domain.WorkspaceManager;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +46,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
   private final PipelineProperties properties;
   private final GitHubActionsLogClient actionsLogClient;
   private final IncidentMemoryService incidentMemoryService;
+  private final DraftPullRequestService draftPullRequestService;
 
   public DefaultLiveIncidentExecutor(
       WorkspaceManager workspaceManager,
@@ -54,7 +58,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
       IncidentEventStreamService eventStreamService,
       PipelineProperties properties,
       GitHubActionsLogClient actionsLogClient,
-      IncidentMemoryService incidentMemoryService) {
+      IncidentMemoryService incidentMemoryService,
+      DraftPullRequestService draftPullRequestService) {
     this.workspaceManager = Objects.requireNonNull(workspaceManager, "workspaceManager");
     this.sandboxRunner = Objects.requireNonNull(sandboxRunner, "sandboxRunner");
     this.surefireParser = Objects.requireNonNull(surefireParser, "surefireParser");
@@ -66,6 +71,8 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
     this.actionsLogClient = Objects.requireNonNull(actionsLogClient, "actionsLogClient");
     this.incidentMemoryService =
         Objects.requireNonNull(incidentMemoryService, "incidentMemoryService");
+    this.draftPullRequestService =
+        Objects.requireNonNull(draftPullRequestService, "draftPullRequestService");
   }
 
   @Override
@@ -80,6 +87,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
     runPipeline(
         runId,
         scenario.id(),
+        properties.demoRepoName(),
         properties.demoRepoUri(),
         scenario.branch(),
         Map.of("scenarioId", scenario.id(), "branch", scenario.branch()),
@@ -97,6 +105,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
     runPipeline(
         runId,
         event.fullRepoName() + ":" + event.headBranch(),
+        event.fullRepoName(),
         event.cloneUrl(),
         event.headBranch(),
         Map.of(
@@ -109,6 +118,7 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
   private void runPipeline(
       UUID runId,
       String originBugId,
+      String repoName,
       String repoUri,
       String branch,
       Map<String, Object> receivedPayload,
@@ -173,6 +183,19 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
       if (result.succeeded()) {
         incidentMemoryService.recordVerifiedResolution(
             originBugId, distilled.summary(), result.rootCauseSummary());
+        incidentRepository.updateRunStatus(runId, IncidentStatus.OPENING_PR);
+        Optional<PullRequestResult> draftPr =
+            draftPullRequestService.openDraftPr(
+                runId,
+                repoName,
+                repoUri,
+                branch,
+                workspace.commitSha(),
+                originBugId,
+                baselineReport,
+                result);
+        String prUrl = draftPr.map(PullRequestResult::htmlUrl).orElse(null);
+
         incidentRepository.completeRun(
             runId,
             IncidentStatus.SUCCEEDED,
@@ -180,20 +203,21 @@ public class DefaultLiveIncidentExecutor implements LiveIncidentExecutor {
             result.attempts().size(),
             result.rootCauseSummary(),
             result.unifiedDiff(),
-            null,
+            prUrl,
             result.totalPromptTokens(),
             result.totalCompletionTokens(),
             result.totalCostUsd(),
             durationMs,
             Instant.now());
+        Map<String, Object> completedPayload = new LinkedHashMap<>();
+        completedPayload.put("attemptsUsed", result.attempts().size());
+        completedPayload.put("rootCauseSummary", result.rootCauseSummary());
+        completedPayload.put("costUsd", result.totalCostUsd().toPlainString());
+        if (prUrl != null) {
+          completedPayload.put("prUrl", prUrl);
+        }
         eventStreamService.publish(
-            runId,
-            IncidentStage.PR_OPENED,
-            IncidentEventType.COMPLETED,
-            Map.of(
-                "attemptsUsed", result.attempts().size(),
-                "rootCauseSummary", result.rootCauseSummary(),
-                "costUsd", result.totalCostUsd().toPlainString()));
+            runId, IncidentStage.PR_OPENED, IncidentEventType.COMPLETED, completedPayload);
       } else {
         String reason = result.failureReason() == null ? "MAX_ATTEMPTS" : result.failureReason();
         incidentRepository.completeRun(

@@ -98,11 +98,19 @@ public class AgenticHealingService {
         continue;
       }
 
-      AttemptRecord record = evaluateProposal(attemptNo, context, proposal, onSandboxLine);
+      ProposalEvaluation evaluation = evaluateProposal(attemptNo, context, proposal, onSandboxLine);
+      AttemptRecord record = evaluation.record();
       attempts.add(record);
       if (record.outcome() == AttemptOutcome.VERIFIED) {
+        AppliedPatch applied = evaluation.appliedPatch();
         return HealingResult.succeeded(
-            proposal.rootCauseSummary(), record.unifiedDiff(), attempts, llmCalls);
+            proposal.rootCauseSummary(),
+            record.unifiedDiff(),
+            applied.modifiedFiles(),
+            applied.createdFiles(),
+            applied.fileContents(),
+            attempts,
+            llmCalls);
       }
       conversation.add(
           new LlmMessage(
@@ -154,7 +162,7 @@ public class AgenticHealingService {
     }
   }
 
-  private AttemptRecord evaluateProposal(
+  private ProposalEvaluation evaluateProposal(
       int attemptNo,
       HealingContext context,
       PatchProposal proposal,
@@ -164,53 +172,61 @@ public class AgenticHealingService {
       PolicyValidationResult policyResult =
           integrityPolicy.validatePatch(attemptWorkspace, proposal);
       if (!policyResult.allowed()) {
-        return new AttemptRecord(
-            attemptNo,
-            AttemptOutcome.POLICY_VIOLATION,
-            "",
-            -1,
-            0,
-            0,
-            0L,
-            String.join("; ", policyResult.violations()));
+        return new ProposalEvaluation(
+            new AttemptRecord(
+                attemptNo,
+                AttemptOutcome.POLICY_VIOLATION,
+                "",
+                -1,
+                0,
+                0,
+                0L,
+                String.join("; ", policyResult.violations())),
+            null);
       }
 
       AppliedPatch applied;
       try {
         applied = patchApplier.apply(attemptWorkspace, proposal);
       } catch (PatchApplyException | PathTraversalException e) {
-        return new AttemptRecord(
-            attemptNo, AttemptOutcome.APPLY_ERROR, "", -1, 0, 0, 0L, e.getMessage());
+        return new ProposalEvaluation(
+            new AttemptRecord(
+                attemptNo, AttemptOutcome.APPLY_ERROR, "", -1, 0, 0, 0L, e.getMessage()),
+            null);
       }
 
       SandboxResult sandbox =
           sandboxRunner.runTests(
               new SandboxRequest(attemptWorkspace, SandboxRequest.DEFAULT_TIMEOUT), onSandboxLine);
       if (sandbox.timedOut()) {
-        return new AttemptRecord(
-            attemptNo,
-            AttemptOutcome.TIMEOUT,
-            applied.unifiedDiff(),
-            sandbox.exitCode(),
-            0,
-            0,
-            sandbox.durationMs(),
-            "Sandbox timed out after " + sandbox.durationMs() + "ms");
+        return new ProposalEvaluation(
+            new AttemptRecord(
+                attemptNo,
+                AttemptOutcome.TIMEOUT,
+                applied.unifiedDiff(),
+                sandbox.exitCode(),
+                0,
+                0,
+                sandbox.durationMs(),
+                "Sandbox timed out after " + sandbox.durationMs() + "ms"),
+            applied);
       }
 
       TestSuiteReport afterPatch = surefireParser.parse(attemptWorkspace);
       VerificationResult verification =
           integrityPolicy.verifyOutcome(sandbox.exitCode(), context.baselineReport(), afterPatch);
       if (verification.verified()) {
-        return new AttemptRecord(
-            attemptNo,
-            AttemptOutcome.VERIFIED,
-            applied.unifiedDiff(),
-            sandbox.exitCode(),
-            afterPatch.executedTests(),
-            afterPatch.failures() + afterPatch.errors(),
-            sandbox.durationMs(),
-            "Verified");
+        return new ProposalEvaluation(
+            new AttemptRecord(
+                attemptNo,
+                AttemptOutcome.VERIFIED,
+                applied.unifiedDiff(),
+                sandbox.exitCode(),
+                afterPatch.executedTests(),
+                afterPatch.failures() + afterPatch.errors(),
+                sandbox.durationMs(),
+                "Verified"),
+            applied);
       }
 
       String rawOutput = String.join("\n", sandbox.outputLines());
@@ -222,19 +238,23 @@ public class AgenticHealingService {
       String feedback =
           String.join("; ", verification.reasons())
               + (distilled.summary().isEmpty() ? "" : "\n" + distilled.summary());
-      return new AttemptRecord(
-          attemptNo,
-          outcome,
-          applied.unifiedDiff(),
-          sandbox.exitCode(),
-          afterPatch.executedTests(),
-          afterPatch.failures() + afterPatch.errors(),
-          sandbox.durationMs(),
-          feedback);
+      return new ProposalEvaluation(
+          new AttemptRecord(
+              attemptNo,
+              outcome,
+              applied.unifiedDiff(),
+              sandbox.exitCode(),
+              afterPatch.executedTests(),
+              afterPatch.failures() + afterPatch.errors(),
+              sandbox.durationMs(),
+              feedback),
+          applied);
     } finally {
       deleteRecursively(attemptWorkspace);
     }
   }
+
+  private record ProposalEvaluation(AttemptRecord record, AppliedPatch appliedPatch) {}
 
   private Path copyCleanWorkspace(Path sourceRoot) {
     try {

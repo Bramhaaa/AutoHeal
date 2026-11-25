@@ -69,6 +69,14 @@ class PatchApplierTest {
         .containsExactly("src/main/java/com/demo/PaymentService.java");
     assertThat(applied.createdFiles())
         .containsExactly("src/test/java/com/demo/PaymentRegressionTest.java");
+    assertThat(applied.fileContents())
+        .containsOnlyKeys(
+            "src/main/java/com/demo/PaymentService.java",
+            "src/test/java/com/demo/PaymentRegressionTest.java");
+    assertThat(applied.fileContents().get("src/main/java/com/demo/PaymentService.java"))
+        .contains("discount == null ? 0 : discount");
+    assertThat(applied.fileContents().get("src/test/java/com/demo/PaymentRegressionTest.java"))
+        .isEqualTo("package com.demo;\n\nclass PaymentRegressionTest {}\n");
 
     String updated =
         Files.readString(workspace.resolve("src/main/java/com/demo/PaymentService.java"));

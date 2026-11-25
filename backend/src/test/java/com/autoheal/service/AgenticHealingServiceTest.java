@@ -118,6 +118,13 @@ class AgenticHealingServiceTest {
     assertThat(result.rootCauseSummary()).isEqualTo("Guard against null discount");
     assertThat(result.unifiedDiff())
         .contains("+    return 100 - (discount == null ? 0 : discount);");
+    assertThat(result.modifiedFiles())
+        .containsExactly("src/main/java/com/demo/PaymentService.java");
+    assertThat(result.createdFiles()).isEmpty();
+    assertThat(result.patchedFileContents())
+        .containsOnlyKeys("src/main/java/com/demo/PaymentService.java");
+    assertThat(result.patchedFileContents().get("src/main/java/com/demo/PaymentService.java"))
+        .contains("return 100 - (discount == null ? 0 : discount);");
     assertThat(result.attempts()).hasSize(1);
     assertThat(result.attempts().getFirst().outcome()).isEqualTo(AttemptOutcome.VERIFIED);
     assertThat(result.llmCalls()).hasSize(4);

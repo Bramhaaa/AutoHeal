@@ -89,6 +89,7 @@ public class PatchApplier {
     // Phase 2: write validated changes to disk and generate canonical unified diff.
     List<String> modifiedRelPaths = new ArrayList<>();
     List<String> createdRelPaths = new ArrayList<>();
+    Map<String, String> fileContents = new LinkedHashMap<>();
     StringBuilder unifiedDiff = new StringBuilder();
 
     for (Map.Entry<Path, String> entry : workingContents.entrySet()) {
@@ -97,6 +98,7 @@ public class PatchApplier {
       String updated = entry.getValue();
       writeUtf8(path, updated, relPath);
       modifiedRelPaths.add(relPath);
+      fileContents.put(relPath, updated);
 
       appendUnifiedDiff(
           unifiedDiff, "a/" + relPath, "b/" + relPath, originalContents.get(path), updated);
@@ -109,11 +111,13 @@ public class PatchApplier {
       createParentDirs(path, relPath);
       writeUtf8(path, content, relPath);
       createdRelPaths.add(relPath);
+      fileContents.put(relPath, content);
 
       appendUnifiedDiff(unifiedDiff, "/dev/null", "b/" + relPath, "", content);
     }
 
-    return new AppliedPatch(modifiedRelPaths, createdRelPaths, unifiedDiff.toString());
+    return new AppliedPatch(
+        modifiedRelPaths, createdRelPaths, unifiedDiff.toString(), fileContents);
   }
 
   private void appendUnifiedDiff(

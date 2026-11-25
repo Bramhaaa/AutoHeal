@@ -566,3 +566,33 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [`pgvector` — Indexing (HNSW vs IVFFlat) & Distance Operators](https://github.com/pgvector/pgvector#hnsw)
 - [Gemini API — Embeddings (`embedContent`)](https://ai.google.dev/gemini-api/docs/embeddings)
+
+
+---
+
+## Slice 18: Wiring GitHub Draft PR Creation into `DefaultLiveIncidentExecutor` (`FR-5.1`, `FR-5.2`)
+
+### What was built
+- **In-Memory Patched File Propagation (`AppliedPatch` & `HealingResult`):**
+  - Extended `AppliedPatch` with `Map<String, String> fileContents` (populated directly by `PatchApplier` during Phase 2 before disk cleanup) and propagated `modifiedFiles`, `createdFiles`, and `patchedFileContents` through `AgenticHealingService` into `HealingResult`.
+  - This guarantees the GitHub Git Data API receives the exact verified file contents even after `AgenticHealingService` deletes each attempt's temporary workspace in its `finally` block.
+- **Dedicated `DraftPullRequestService` (`com.autoheal.service`):**
+  - Extracted PR orchestration into a focused 3-dependency `@Service` (`GitHubPrClient`, `PullRequestBodyFormatter`, `PipelineProperties`) instead of bloating `DefaultLiveIncidentExecutor`.
+  - Respects the `autoheal.pipeline.pr-creation-enabled` flag, resolves `owner/repo` from either `repoName` or the GitHub clone URI (`https://github.com/owner/repo.git` / `git@github.com:owner/repo.git`), builds sanitized `autoheal/fix-{scenario}-{shortUuid}` branch names, formats the markdown PR body, and returns `Optional<PullRequestResult>`.
+- **Pipeline & SSE Wiring (`DefaultLiveIncidentExecutor`):**
+  - On a verified green build, transitions `incident_runs` to `IncidentStatus.OPENING_PR`, calls `DraftPullRequestService.openDraftPr(...)`, persists `prUrl` in `incident_runs`, and includes `prUrl` in the `COMPLETED` SSE event payload when present.
+
+### Key Concepts Used
+- **Passing Immutable Snapshots Across Ephemeral Lifecycles:** Because `attemptWorkspace` is deleted inside `AgenticHealingService`'s `finally` block for hygiene (`FR-4.3`), returning an immutable `Map.copyOf(...)` snapshot of modified/created files avoids re-applying patches or holding open temp directories during external GitHub API calls.
+- **Single-Responsibility Service Extraction:** Keeping `DraftPullRequestService` separate from `DefaultLiveIncidentExecutor` prevents god-class creep while keeping every branch-naming, repo-parsing, and feature-flag edge case unit-testable in isolation (`DraftPullRequestServiceTest`).
+- **`Optional<T>` for Feature-Flagged Side Effects:** Returning `Optional<PullRequestResult>` makes the "PR creation disabled / skipped" case explicit in the type system without `null` checks leaking across callers.
+
+### Likely Interview Questions
+1. **Why capture patched file contents in memory instead of keeping the attempt workspace on disk until the GitHub PR is created?**
+   - *Answer:* Keeping the attempt directory alive couples local disk cleanup to external network I/O (GitHub API timeouts/retries). Capturing the handful of patched UTF-8 source files in an immutable map lets the `finally` block immediately delete the temp workspace while still giving the GitHub Git Data API exact blob contents.
+2. **Why create a separate `DraftPullRequestService` instead of injecting `GitHubPrClient` directly into `DefaultLiveIncidentExecutor`?**
+   - *Answer:* `DefaultLiveIncidentExecutor` already orchestrates workspace cloning, sandboxing, log distillation, healing, memory, and persistence. Isolating branch naming, `owner/repo` parsing, PR body formatting, and feature-flag gating into `DraftPullRequestService` keeps both classes cohesive and easy to unit-test.
+
+### Official Docs
+- [GitHub REST API — Git Data (Blobs, Trees, Commits, Refs)](https://docs.github.com/en/rest/git)
+- [Java 21 `Map.copyOf` & Unmodifiable Collections](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/Map.html#copyOf(java.util.Map))
