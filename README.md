@@ -39,15 +39,15 @@ LLM code assistants routinely generate plausible-looking patches that fail to co
 
 ```mermaid
 flowchart LR
-    Trigger["GitHub workflow_run Webhook<br/>or Live Playground"] --> API["Spring Boot 3.4 API<br/>Virtual Threads · Semaphore(3)"]
-    API --> Clone["JGit Host Clone<br/>UID 1000 Workspace"]
-    Clone --> Context["Log Distiller · Git Diffs<br/>pgvector Historical RAG"]
-    Context --> Agent["Bounded Triage Agent<br/>Max 3 Attempts · Local Tools"]
-    Agent --> Policy["Search/Replace Applier<br/>+ Test Integrity Policy"]
-    Policy --> Sandbox["Hardened Docker Sandbox<br/>--network=none · mvn -o test"]
+    Trigger["GitHub Webhook or Live Playground"] --> API["Spring Boot 3.4 API (Virtual Threads)"]
+    API --> Clone["JGit Host Clone (UID 1000)"]
+    Clone --> Context["Log Distiller, Git Diffs, pgvector RAG"]
+    Context --> Agent["Bounded Triage Agent (Max 3 Attempts)"]
+    Agent --> Policy["Search/Replace Applier + Test Integrity Policy"]
+    Policy --> Sandbox["Hardened Docker Sandbox (mvn -o test)"]
     Sandbox -- "Fail (attempt < 3)" --> Agent
-    Sandbox -- "Exit 0 + Oracle Passes" --> PR["GitHub Draft PR<br/>Git Data API"]
-    API -. "Persisted SSE + Last-Event-ID" .-> UI["Next.js 15 Playground<br/>Monaco Diff · Benchmarks"]
+    Sandbox -- "Exit 0 + Oracle Passes" --> PR["GitHub Draft PR (Git Data API)"]
+    API -. "Persisted SSE + Last-Event-ID" .-> UI["Next.js 15 Playground"]
 ```
 
 ### Hexagonal Package Layering *(Enforced by ArchUnit)*
