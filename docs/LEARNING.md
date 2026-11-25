@@ -656,3 +656,32 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [Spring Framework — Task Execution and Scheduling (`@Scheduled`)](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
 - [GitHub REST API — Git References (`matching-refs`, `DELETE ref`)](https://docs.github.com/en/rest/git/refs)
+
+
+---
+
+## Slice 21: Evaluation Harness, Ablation Runner & Report Formatter (`PRD §7`)
+
+### What was built
+- **Domain Models (`com.autoheal.domain`):**
+  - Added `EvalBugCase`, `EvalConfig`, `EvalCaseOutcome`, and `EvalSuiteResult` records capturing per-bug outcomes, Fix Rate @1 / @Max, mean log compression ratio, median/p90 duration, mean cost, and failure taxonomy.
+- **Configurable Attempt Cap (`AgenticHealingService`):**
+  - Added `heal(HealingContext context, int maxAttempts, Consumer<String> onSandboxLine)` overload so single-shot (`maxAttempts = 1`) vs. feedback-loop (`maxAttempts = 3`) ablations run through the exact same agent loop.
+- **Evaluation Harness & Report Writer (`EvalHarnessService`, `EvalReportFormatter`, `AutoHealEvalRunner`):**
+  - `EvalHarnessService` executes the real pipeline (clone → baseline sandbox → Surefire parse → optional log distillation → RAG lookup with `originBugId = bug.id()` leakage guard → agent loop, without PR creation) across multiple `EvalConfig` ablations and `repeatCount` runs, and persists the resulting `BenchmarkSummary` to `benchmark_reports` (`EvalHarnessServiceTest`).
+  - `EvalReportFormatter` renders Markdown (overall metrics, ablation table, failure taxonomy, per-category breakdown) and pretty-printed JSON (`benchmark-report.md` and `benchmark-report.json`, `EvalReportFormatterTest`).
+  - `AutoHealEvalRunner` (`@ConditionalOnProperty(name = "autoheal.eval.enabled", havingValue = "true")`) exposes the CLI runner inside the same Spring Boot JAR without affecting normal server startup.
+
+### Key Concepts Used
+- **Conditional Spring Boot CLI Mode (`@ConditionalOnProperty` + `ApplicationRunner`):** Running the same JAR with `--spring.main.web-application-type=none --autoheal.eval.enabled=true` lets the evaluation harness reuse every Spring-wired bean (`JdbcClient`, `DockerSandboxRunner`, `GeminiLlmClient`, `IncidentMemoryService`) without maintaining a separate Maven module or duplicated wiring.
+- **Eval Leakage Guard in Practice:** Passing `bug.id()` as `originBugId` to `IncidentMemoryService.retrieveSimilar(...)` ensures that even across `repeatCount = 3` runs or self-populated memories, the agent never sees a prior solution derived from the same bug ID.
+- **Nearest-Rank Percentile (`p50`, `p90`):** Sorting observed durations and indexing `ceil(q * n) - 1` gives exact, reproducible median and tail latency metrics without external statistics libraries.
+
+### Likely Interview Questions
+1. **Why distinguish "Fix Rate @3 attempts" from "pass@3"?**
+   - *Answer:* In ML benchmarks (like HumanEval), `pass@k` means drawing `k` *independent* samples and checking if any pass. In AutoHeal, attempts 2 and 3 receive the distilled compiler/Surefire error from the previous attempt—so it's a sequential feedback loop, not independent sampling. Calling it "Fix Rate @3 attempts" is technically accurate and shows rigor.
+2. **Why run ablations (No RAG, Single-Shot, Raw Logs) instead of just reporting one overall fix rate?**
+   - *Answer:* A single headline number doesn't prove which architectural pieces actually help. Ablations isolate the marginal impact of `pgvector` RAG, the 3-attempt verification feedback loop, and log distillation on both fix rate and token cost.
+
+### Official Docs
+- [Spring Boot — `ApplicationRunner` & `@ConditionalOnProperty`](https://docs.spring.io/spring-boot/reference/features/spring-application.html#features.spring-application.command-line-runner)

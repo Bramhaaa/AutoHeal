@@ -74,8 +74,17 @@ public class AgenticHealingService {
   }
 
   public HealingResult heal(HealingContext context, Consumer<String> onSandboxLine) {
+    return heal(context, MAX_ATTEMPTS, onSandboxLine);
+  }
+
+  public HealingResult heal(
+      HealingContext context, int maxAttempts, Consumer<String> onSandboxLine) {
     Objects.requireNonNull(context, "context must not be null");
     Objects.requireNonNull(onSandboxLine, "onSandboxLine must not be null");
+    if (maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS) {
+      throw new IllegalArgumentException(
+          "maxAttempts must be between 1 and " + MAX_ATTEMPTS + ", got: " + maxAttempts);
+    }
 
     List<LlmMessage> conversation = new ArrayList<>();
     conversation.add(new LlmMessage(Role.SYSTEM, systemPrompt()));
@@ -84,7 +93,7 @@ public class AgenticHealingService {
     List<AttemptRecord> attempts = new ArrayList<>();
     List<LlmUsage> llmCalls = new ArrayList<>();
 
-    for (int attemptNo = 1; attemptNo <= MAX_ATTEMPTS; attemptNo++) {
+    for (int attemptNo = 1; attemptNo <= maxAttempts; attemptNo++) {
       PatchProposal proposal = runToolLoop(context.workspaceRoot(), conversation, llmCalls);
       if (proposal == null) {
         String feedback =
