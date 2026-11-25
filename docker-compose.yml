@@ -4,8 +4,8 @@ services:
     container_name: autoheal-postgres
     environment:
       POSTGRES_DB: autoheal
-      POSTGRES_USER: autoheal
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autoheal}
+      POSTGRES_USER: ${DATABASE_USER:-autoheal}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-autoheal}}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
