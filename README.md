@@ -119,18 +119,12 @@ Four deterministic Java 21 / Spring Boot bug scenarios live in [`demo-service/`]
 **Prerequisites:** Java 21+, Maven 3.9+, Node.js 20+, Docker Desktop (running).
 
 ```bash
-# 1. Build the pre-warmed offline Maven sandbox image (/opt/m2 baked via real mvn test)
-docker build -t autoheal-maven-runner:java21 -f sandbox/Dockerfile .
+cp .env.example .env   # add GEMINI_API_KEY and set FRONTEND_ORIGIN=http://localhost:3000
 
-# 2. Start PostgreSQL 16 + pgvector
-docker compose up -d
-
-# 3. Verify and run the Spring Boot backend
-cd backend && mvn -B verify
-GEMINI_API_KEY=... DEMO_REPO_URI=... mvn spring-boot:run
-
-# 4. Run the Next.js Live Playground (in a second terminal)
-cd frontend && npm ci && npm run dev
+./autoheal up          # starts Postgres, Backend (:8080), and Frontend (:3000)
+./autoheal status      # check health of all services
+./autoheal logs        # tail backend & frontend logs
+./autoheal down        # cleanly stops everything (keeps DB data)
 ```
 
 <details>

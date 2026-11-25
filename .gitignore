@@ -24,6 +24,7 @@ test-results/
 .env.*
 !.env.example
 
-# AutoHeal runtime workspaces
+# AutoHeal runtime workspaces & local dev runner
 runs/
+.autoheal-dev/
 *.tmp
