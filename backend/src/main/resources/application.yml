@@ -41,6 +41,8 @@ autoheal:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
   sweeper:
     interval-ms: ${AUTOHEAL_SWEEPER_INTERVAL_MS:60000}
+  hygiene:
+    cron: ${AUTOHEAL_HYGIENE_CRON:0 0 3 * * *}
   workspace:
     root: ${AUTOHEAL_WORKSPACE_ROOT:${java.io.tmpdir}/autoheal-runs}
 

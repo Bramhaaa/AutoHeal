@@ -626,3 +626,33 @@ This file grows after every slice. By the end of the project, it doubles as your
 ### Official Docs
 - [PostgreSQL — `JSONB` Data Type](https://www.postgresql.org/docs/16/datatype-json.html)
 - [Spring Framework — `JdbcClient`](https://docs.spring.io/spring-framework/reference/data-access/jdbc/core.html#jdbc-JdbcClient)
+
+
+---
+
+## Slice 20: Daily Demo Repo Hygiene Scheduled Job (`FR-5.3`)
+
+### What was built
+- **Domain Port & Models (`com.autoheal.domain`):**
+  - Added immutable records `OpenPullRequest(number, headBranch, createdAt)` and `GitBranchInfo(name, committedAt)`, plus the `GitHubRepoHygieneClient` port interface.
+- **GitHub REST Hygiene Adapter (`GitHubRestRepoHygieneClient` in `com.autoheal.infra.github`):**
+  - Implements `listOpenPullRequests` (`GET /pulls?state=open&per_page=100`), `closePullRequest` (`PATCH /pulls/{number}`), `listBranchesWithPrefix` (`GET /git/matching-refs/heads/{prefix}` + commit date lookup), and `deleteBranch` (`DELETE /git/refs/heads/{branch}`).
+  - Enforces a defense-in-depth prefix guard inside `deleteBranch`: any branch not starting with `autoheal/` is rejected with `IllegalArgumentException` before any HTTP call is made (`GitHubRestRepoHygieneClientTest`).
+- **Scheduled Cleanup Service (`DemoRepoHygieneService` in `com.autoheal.service`):**
+  - Runs daily via `@Scheduled(cron = "${autoheal.hygiene.cron:0 0 3 * * *}")` when `autoheal.pipeline.pr-creation-enabled=true`.
+  - Uses an injected `java.time.Clock` to compute the 24-hour staleness cutoff, closes only stale `autoheal/*` PRs, deletes only stale `autoheal/*` branches, and catches `RuntimeException` at the scheduled boundary so transient GitHub outages never kill the Spring scheduler (`DemoRepoHygieneServiceTest`).
+
+### Key Concepts Used
+- **Defense-in-Depth Safety Guards:** Both `DemoRepoHygieneService` (policy layer) and `GitHubRestRepoHygieneClient.deleteBranch` (adapter layer) independently verify the `autoheal/` branch prefix so a misconfiguration or bug can never delete `main` or `scenario/*` branches.
+- **Injectable `java.time.Clock`:** Passing `Clock.fixed(...)` in tests makes 24-hour expiration logic 100% deterministic without `Thread.sleep` or brittle wall-clock offsets.
+- **Spring `@Scheduled(cron = ...)` with Externalized Config:** Using a property placeholder with a sensible default (`0 0 3 * * *`) lets operators adjust the schedule via env vars (`AUTOHEAL_HYGIENE_CRON`) without rebuilding the JAR.
+
+### Likely Interview Questions
+1. **How do you make sure a scheduled cleanup job can never accidentally delete `main` or a developer's feature branch?**
+   - *Answer:* We enforce the `autoheal/` prefix invariant in two layers: the service only filters PRs/branches starting with `autoheal/`, and the GitHub adapter's `deleteBranch` method refuses any branch name that doesn't start with `autoheal/` with an `IllegalArgumentException` before making any HTTP call.
+2. **Why wrap the body of a `@Scheduled` method in a boundary `try/catch (RuntimeException)`?**
+   - *Answer:* By default Spring's task scheduler logs uncaught exceptions and keeps running, but catching at the top-level scheduled boundary gives us structured logging, clean observability (`HygieneSummary`), and explicit failure handling without leaking stack traces into unrelated logs.
+
+### Official Docs
+- [Spring Framework — Task Execution and Scheduling (`@Scheduled`)](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
+- [GitHub REST API — Git References (`matching-refs`, `DELETE ref`)](https://docs.github.com/en/rest/git/refs)
