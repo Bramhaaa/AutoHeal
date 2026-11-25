@@ -34,11 +34,13 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       DEMO_REPO_URI: ${DEMO_REPO_URI:?DEMO_REPO_URI must be set}
       DEMO_REPO_NAME: ${DEMO_REPO_NAME:-autoheal-demo-service}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       AUTOHEAL_TRUST_FORWARDED_FOR: "true"
       AUTOHEAL_PR_CREATION_ENABLED: ${AUTOHEAL_PR_CREATION_ENABLED:-true}
+      AUTOHEAL_HYGIENE_CRON: ${AUTOHEAL_HYGIENE_CRON:-0 0 3 * * *}
       AUTOHEAL_WORKSPACE_ROOT: /var/autoheal/runs
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
