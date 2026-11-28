@@ -10,7 +10,7 @@ Start searches here before scanning the repo.
 - `infra/nginx/` — Production Nginx reverse proxy config (`autoheal.conf`, SSE `proxy_buffering off`).
 - `docs/` — `LEARNING.md` (per-slice concepts & interview Q&As, Slices 1–14).
 - `.agents/` — Skills (`skills/`), persistent project memory (`memory/`), templates (`templates/`).
-- Root deploy files: `docker-compose.yml` (local Postgres+pgvector), `docker-compose.prod.yml` (VM stack), `.env.example`.
+- Root deploy & dev files: `autoheal` (single-command local `up`/`down`/`restart`/`status`/`logs` runner), `docker-compose.yml` (local Postgres+pgvector), `docker-compose.prod.yml` (VM stack), `.env.example`.
 
 ## Implemented Features & Key Files
 - **Build & Architecture Gates:** `backend/pom.xml` (Error Prone, Spotless, JaCoCo ≥80% on `service`/`domain`), `backend/src/test/java/com/autoheal/ArchitectureTest.java`.
@@ -64,5 +64,5 @@ Start searches here before scanning the repo.
   - Adapter & service: `backend/src/main/java/com/autoheal/infra/github/GitHubRestRepoHygieneClient.java`, `backend/src/main/java/com/autoheal/service/DemoRepoHygieneService.java`
 - **Evaluation Harness & CLI (`PRD §7`):**
   - Models: `backend/src/main/java/com/autoheal/domain/{EvalBugCase,EvalConfig,EvalCaseOutcome,EvalSuiteResult}.java`
-  - Services & CLI: `backend/src/main/java/com/autoheal/service/{EvalHarnessService,EvalReportFormatter}.java`, `backend/src/main/java/com/autoheal/api/AutoHealEvalRunner.java`, `eval-corpus/bugs.example.json`
+  - Services & CLI: `backend/src/main/java/com/autoheal/service/{EvalHarnessService,EvalReportFormatter}.java`, `backend/src/main/java/com/autoheal/api/AutoHealEvalRunner.java`, `eval-corpus/bugs.json`
 - **Root Documentation:** `README.md` (architecture, security invariants, quickstart, webhook setup, eval CLI, production deploy).

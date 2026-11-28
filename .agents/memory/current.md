@@ -1,23 +1,18 @@
 # Current Working Memory
 
-- **Current Phase:** Week 5 Engineering Complete (Slices 1–22 done) → Ready for live deployment, demo video, and real corpus evaluation run
-- **Current Branch:** `main`
+- **Current Phase:** Live E2E Verified & Zero-Placeholder Complete → Ready for Production Deployment (Azure for Students VM + Vercel, or Vercel + Cloudflare Tunnel) & Eval Run
+- **Current Branch:** `main` (synced with `origin/main`)
 - **Completed Work:**
-  - PRD v1.1 (`PRD.md`, single source of truth).
-  - Engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..005), learning log (`docs/LEARNING.md` Slices 1–21), portfolio `README.md`, quality skills, and persistent memory.
-  - **Week 1 (Slices 1–4):** Backend skeleton + quality gates (`f5b06c2`), `demo-service` 4 deterministic scenarios (`219d01b`), hardened `DockerSandboxRunner` + `autoheal-maven-runner:java21` (`d640e20`), `JGitWorkspaceManager` + XXE-safe `SurefireReportParser` (`4615577`).
-  - **Week 2 (Slices 5–9):** Path-safe `WorkspaceTools` + `TestIntegrityPolicy` + `PatchApplier` (`e04de62`), `LogDistiller` (`43a1331`), `LlmClient` + bounded `AgenticHealingService` (`6086a6a`), `GeminiLlmClient` (`477a002`), `GitHubRestPrClient` + `PullRequestBodyFormatter` (`ce4f93d`).
-  - **Week 3 (Slices 10–14 — MVP Checkpoint):** Postgres+pgvector Flyway & `JdbcIncidentRepository` (`d68d0f0`), `ScenarioCatalog` & persisted SSE (`93e2406`), async `IncidentOrchestratorService` + Replay Mode (`785e08b`), Bucket4j abuse protection & REST/SSE controllers (`539e391`), `SandboxSweeperService` + Actuator + Dockerfile + Nginx/Compose VM stack (`f9b1ccf`).
-  - **Week 4 (Slices 15–17):** Next.js Live Incident Playground & Benchmarks UI (`6038c77`), GitHub `workflow_run` webhook with constant-time HMAC & Actions log zip client (`5ddd515`), `pgvector` Historical RAG + 30-entry seed corpus + eval leakage guard (`c7ed81e`).
-  - **Week 5 (Slices 18–22 — Complete):**
-    - Slice 18 (`144e704`): `DraftPullRequestService` + in-memory patched file propagation (`AppliedPatch`/`HealingResult`) wired into `DefaultLiveIncidentExecutor` (`FR-5.1`, `FR-5.2`).
-    - Slice 19 (`56bf8a5`): `GET /api/v1/benchmarks/summary` backed by `benchmark_reports` JSONB (`JdbcBenchmarkReportRepository`, `BenchmarkReportService`, `BenchmarkController`, `FR-1.5`).
-    - Slice 20 (`d33b3e6`): Daily `DemoRepoHygieneService` + `GitHubRestRepoHygieneClient` with `autoheal/` branch deletion guard (`FR-5.3`).
-    - Slice 21 (`11dea3d`): `EvalHarnessService`, `EvalReportFormatter` (Markdown + JSON), `AutoHealEvalRunner` CLI mode, and configurable `maxAttempts` on `AgenticHealingService` (`PRD §7`). (`130/130` Maven tests, Spotless `166/166`, Error Prone 0 warnings, ArchUnit `4/4`, JaCoCo ≥80% met).
-    - Slice 22 (`f23fee1` + README polish): Portfolio `README.md`, `eval-corpus/bugs.example.json`, and synced `docker-compose.prod.yml` / `.env.example`.
+  - PRD v1.1 (`PRD.md`), engineering rules (`AGENTS.md`), ADRs (`DECISIONS.md` ADR-001..005), learning log (`docs/LEARNING.md` Slices 1–21), portfolio `README.md`, single-command `./autoheal` dev launcher, and persistent memory.
+  - **Weeks 1–5 (Slices 1–22):** Full backend (`130/130` tests, Spotless `166/166`, Error Prone `0` warnings, ArchUnit `4/4`, JaCoCo ≥80%), Next.js 15 Live Playground + Benchmarks UI (`2/2` Playwright E2E, `tsc --noEmit`, ESLint `0` warnings), hardened Docker sandbox (`autoheal-maven-runner:java21`), GitHub webhook, `pgvector` RAG, Draft PR wiring, Benchmarks API, Daily Demo Hygiene, and Evaluation Harness CLI.
+  - **Live End-to-End Verification & Hardening (2026-11-28):**
+    - Published real public demo repo `https://github.com/Bramhaaa/autoheal-demo-service` with `main` + all 4 failing `scenario/*` branches.
+    - Added `./autoheal` single-command launcher (`up`/`down`/`restart`/`status`/`logs`, `a0f924e`) and fixed local `docker-compose.yml` `DATABASE_PASSWORD` + `.env.example` cron quoting (`478b075`).
+    - Verified full LIVE healing E2E on `payment-npe-01`: healed on **Attempt 1 in 26.4s** for **`$0.00106`**, 82.0% log distillation, opened real GitHub Draft PR `https://github.com/Bramhaaa/autoheal-demo-service/pull/1`, unlocked Replay Mode.
+    - Fixed live Gemini issues discovered during E2E (`ebbabb6`): switched `GeminiEmbeddingClient` to `gemini-embedding-001` (`768`-dim, `x-goog-api-key` header), added `Role.ASSISTANT` alternating `model` turns + step logging in `AgenticHealingService`, added 45s read timeout in `GeminiLlmClient`, and replaced `eval-corpus/bugs.example.json` with real `eval-corpus/bugs.json` (0 placeholders across repo).
 - **Next Recommended Task:**
-  - Live deployment & real-world verification: push `demo-service` scenario branches to a public GitHub repo, run end-to-end live smoke test with real `GEMINI_API_KEY` + `GITHUB_TOKEN`, deploy backend VM (`docker-compose.prod.yml`) + Vercel frontend, and run `autoheal-eval` against a curated 25–30 bug corpus.
+  - Deploy backend + Postgres + sandbox on **Azure for Students** Ubuntu VM (`docker-compose.prod.yml` + DuckDNS + Caddy auto-HTTPS, zero credit card required) and deploy `frontend/` to **Vercel**, then run `autoheal-eval` against `eval-corpus/bugs.json` (`PRD §7`, `§8`).
 - **Known Minor Gaps (non-blocking):**
   - `DockerSandboxRunner.sweepExpiredContainers(Duration)` has unit coverage on `SandboxSweeperService` (mocked runner) but no dedicated Docker integration test yet.
-  - Private-repo cloning via `JGitWorkspaceManager` currently assumes public HTTPS clone URLs (would need `UsernamePasswordCredentialsProvider` with `GITHUB_TOKEN` for private repos).
-- **Blockers:** None (ensure Docker Desktop is running when executing `DockerSandboxRunnerTest` and Testcontainers tests).
+  - Private-repo cloning via `JGitWorkspaceManager` assumes public HTTPS URLs (would need `UsernamePasswordCredentialsProvider` with `GITHUB_TOKEN` for private repos).
+- **Blockers:** None (Oracle Cloud requires a credit card; use Azure for Students VM or Vercel + Cloudflare Tunnel instead).
