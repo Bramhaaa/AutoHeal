@@ -38,11 +38,14 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AgenticHealingService {
 
+  private static final Logger log = LoggerFactory.getLogger(AgenticHealingService.class);
   public static final int MAX_ATTEMPTS = 3;
   public static final int MAX_TOOL_CALLS_PER_ATTEMPT = 15;
   private static final Set<String> SKIPPED_COPY_DIRS = Set.of(".git", "target");
@@ -143,13 +146,39 @@ public class AgenticHealingService {
       llmCalls.add(turn.usage());
 
       LlmToolCall toolCall = turn.toolCall();
+      log.info(
+          "Agent tool step {}/{}: {} ({}ms)",
+          step + 1,
+          MAX_TOOL_CALLS_PER_ATTEMPT,
+          describeToolCall(toolCall),
+          turn.usage().latencyMs());
       if (toolCall instanceof LlmToolCall.ProposePatchCall propose) {
         return propose.proposal();
       }
+      conversation.add(new LlmMessage(Role.ASSISTANT, "Calling " + describeToolCall(toolCall)));
       String toolOutput = executeReadTool(workspaceRoot, toolCall);
       conversation.add(new LlmMessage(Role.TOOL, toolOutput));
     }
     return null;
+  }
+
+  private static String describeToolCall(LlmToolCall toolCall) {
+    return switch (toolCall) {
+      case LlmToolCall.ListFilesCall c ->
+          "list_files(dir=\"" + c.dir() + "\", glob=\"" + c.glob() + "\")";
+      case LlmToolCall.ReadFileCall c ->
+          "read_file(path=\""
+              + c.path()
+              + "\", startLine="
+              + c.startLine()
+              + ", endLine="
+              + c.endLine()
+              + ")";
+      case LlmToolCall.SearchCodeCall c ->
+          "search_code(query=\"" + c.query() + "\", glob=\"" + c.glob() + "\")";
+      case LlmToolCall.ProposePatchCall c ->
+          "propose_patch(edits=" + c.proposal().edits().size() + ")";
+    };
   }
 
   private String executeReadTool(Path workspaceRoot, LlmToolCall toolCall) {

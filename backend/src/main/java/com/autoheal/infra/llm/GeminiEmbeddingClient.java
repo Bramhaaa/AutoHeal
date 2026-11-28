@@ -16,7 +16,7 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class GeminiEmbeddingClient implements EmbeddingClient {
 
-  private static final String EMBEDDING_MODEL = "text-embedding-004";
+  private static final String EMBEDDING_MODEL = "gemini-embedding-001";
 
   private final RestClient restClient;
   private final ObjectMapper objectMapper;
@@ -53,10 +53,8 @@ public class GeminiEmbeddingClient implements EmbeddingClient {
       rawResponse =
           restClient
               .post()
-              .uri(
-                  "/v1beta/models/{model}:embedContent?key={key}",
-                  EMBEDDING_MODEL,
-                  properties.apiKey())
+              .uri("/v1beta/models/{model}:embedContent", EMBEDDING_MODEL)
+              .header("x-goog-api-key", properties.apiKey())
               .contentType(MediaType.APPLICATION_JSON)
               .body(body)
               .retrieve()

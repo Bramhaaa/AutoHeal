@@ -1,0 +1,30 @@
+[
+  {
+    "id": "demo-payment-npe-01",
+    "category": "NPE",
+    "repoUri": "https://github.com/Bramhaaa/autoheal-demo-service.git",
+    "branch": "scenario/payment-npe-01",
+    "description": "Missing null guard on optional discount payload in PaymentService"
+  },
+  {
+    "id": "demo-pagination-offbyone-02",
+    "category": "BOUNDARY",
+    "repoUri": "https://github.com/Bramhaaa/autoheal-demo-service.git",
+    "branch": "scenario/pagination-off-by-one-02",
+    "description": "Off-by-one upper bound drops final item on full pages"
+  },
+  {
+    "id": "demo-inventory-race-03",
+    "category": "CONCURRENCY",
+    "repoUri": "https://github.com/Bramhaaa/autoheal-demo-service.git",
+    "branch": "scenario/inventory-race-03",
+    "description": "Unsynchronized stock decrement loses updates under concurrent threads"
+  },
+  {
+    "id": "demo-jpql-typo-04",
+    "category": "QUERY",
+    "repoUri": "https://github.com/Bramhaaa/autoheal-demo-service.git",
+    "branch": "scenario/jpql-typo-04",
+    "description": "Broken JPQL entity property name fails Spring Data JPA query validation"
+  }
+]

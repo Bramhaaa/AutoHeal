@@ -15,12 +15,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -30,6 +33,8 @@ public class GeminiLlmClient implements LlmClient {
 
   private static final BigDecimal ONE_MILLION = new BigDecimal("1000000");
   private static final int COST_SCALE = 6;
+  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+  private static final Duration READ_TIMEOUT = Duration.ofSeconds(45);
 
   private final RestClient restClient;
   private final ObjectMapper objectMapper;
@@ -42,7 +47,12 @@ public class GeminiLlmClient implements LlmClient {
     Objects.requireNonNull(restClientBuilder, "restClientBuilder must not be null");
     this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     this.properties = Objects.requireNonNull(properties, "properties must not be null");
-    this.restClient = restClientBuilder.baseUrl(properties.baseUrl()).build();
+    JdkClientHttpRequestFactory requestFactory =
+        new JdkClientHttpRequestFactory(
+            HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
+    requestFactory.setReadTimeout(READ_TIMEOUT);
+    this.restClient =
+        restClientBuilder.baseUrl(properties.baseUrl()).requestFactory(requestFactory).build();
   }
 
   @Override
@@ -84,6 +94,8 @@ public class GeminiLlmClient implements LlmClient {
     for (LlmMessage msg : conversation) {
       if (msg.role() == Role.SYSTEM) {
         systemTexts.add(msg.content());
+      } else if (msg.role() == Role.ASSISTANT) {
+        contents.add(Map.of("role", "model", "parts", List.of(Map.of("text", msg.content()))));
       } else {
         String text = msg.role() == Role.TOOL ? "[TOOL OUTPUT]\n" + msg.content() : msg.content();
         contents.add(Map.of("role", "user", "parts", List.of(Map.of("text", text))));

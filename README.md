@@ -150,7 +150,7 @@ Run the real healing pipeline (without PR creation) across all 4 PRD §7 ablatio
 java -jar backend/target/autoheal-backend-0.1.0-SNAPSHOT.jar \
   --spring.main.web-application-type=none \
   --autoheal.eval.enabled=true \
-  --autoheal.eval.corpus=eval-corpus/bugs.example.json \
+  --autoheal.eval.corpus=eval-corpus/bugs.json \
   --autoheal.eval.output-dir=eval-results \
   --autoheal.eval.repeats=3
 ```

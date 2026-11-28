@@ -46,7 +46,7 @@ class GeminiEmbeddingClientTest {
     String responseJson = "{\"embedding\":{\"values\":[" + valuesJson + "]}}";
 
     server.createContext(
-        "/v1beta/models/text-embedding-004:embedContent",
+        "/v1beta/models/gemini-embedding-001:embedContent",
         exchange -> {
           requestBodySeen.set(
               new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -88,7 +88,7 @@ class GeminiEmbeddingClientTest {
   void throwsLlmExceptionWhenDimensionMismatch() {
     String badResponse = "{\"embedding\":{\"values\":[0.1,0.2]}}";
     server.createContext(
-        "/v1beta/models/text-embedding-004:embedContent",
+        "/v1beta/models/gemini-embedding-001:embedContent",
         exchange -> {
           byte[] bytes = badResponse.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().add("Content-Type", "application/json");
